@@ -56,7 +56,7 @@ import java.util
 
          }
 
-         case default =>
+         case _ =>
        }
 
      }
@@ -72,23 +72,44 @@ import java.util
        schemaUpdateCache.put(value.schema, updatedSchema)
      }
 
-     val updatedValue = new Struct(updatedSchema)
+     var updatedValue = new Struct(updatedSchema)
 
-     logger.info("RECORD STRUCT:" + value.toString)
      logger.info("RECORD:" + record)
+     logger.info("RECORD STRUCT:" + value.toString)
+
 
      for (field <- updatedValue.schema.fields) {
 
-       val after = requireStruct(value.getStruct("after"),PURPOSE)
+       val after = requireStructOrNull(value.getStruct("after"),PURPOSE)
        val before = requireStructOrNull(value.getStruct("before"),PURPOSE)
 
        field.name() match {
          case "magic" => updatedValue.put(field.name, value.get(field.name()))
          case "version" => updatedValue.put(field.name, value.get(field.name()))
 
-         case default => {
-           logger.info("VALUE FIELD:" + field.name() + " " + after.get(field.name())  + " "  )
-           updatedValue.put(field.name, after.get(field.name()))
+         case _ => {
+
+
+           if (before != null && after != null) {
+             val operation = "U"
+             logger.info("VALUE FIELD:" + field.name() + " " + after.get(field.name())  + " "  )
+             updatedValue.put(field.name, after.get(field.name()))
+           }
+
+           else if (after != null) {
+             val operation = "I"
+             logger.info("VALUE FIELD:" + field.name() + " " + after.get(field.name())  + " "  )
+             updatedValue.put(field.name, after.get(field.name()))
+
+           }
+           else if (before != null) {
+             val operation = "D"
+             updatedValue = null // generate tombstone markers
+             updatedSchema = null
+           }
+           else {
+             logger.warn("Both before & after images found to be null. Key: " + record.key())
+           }
          }
        }
 
