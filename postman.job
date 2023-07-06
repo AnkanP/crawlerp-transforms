@@ -1,0 +1,43 @@
+{
+     "name": "kafkasink-poc-test",
+    "connector.class": "org.example.KafkaSinkConnector",
+    "topics": "transform-test-raw",
+    "destination.topic" : "transform-test",
+    "connect.meta.data": "false",
+    "destination.bootstrap.servers" : "broker:29092",
+
+    "destination.schema.registry.url": "http://schema-registry:8089",
+    "kafka.producer.configs": "key.serializer=io.confluent.kafka.serializers.KafkaAvroSerializer,value.serializer=io.confluent.kafka.serializers.KafkaAvroSerializer,acks=all,retries=60,retry.backoff.ms=1000",
+
+
+    "tasks.max": "3",
+    "header.converter.schema.registry.url": "http://schema-registry:8089",
+    "schema.generator.class": "io.confluent.connect.storage.hive.schema.DefaultSchemaGenerator",
+    "value.converter": "io.confluent.connect.avro.AvroConverter",
+    "key.converter": "io.confluent.connect.avro.AvroConverter",
+    "header.converter": "org.apache.kafka.connect.converters.ByteArrayConverter",
+    "value.converter.schema.registry.url": "http://schema-registry:8089",
+    "key.converter.schema.registry.url": "http://schema-registry:8089",
+
+ 	 "transforms": "RawToData,InsertField",
+"transforms.InsertField.type": "org.apache.kafka.connect.transforms.InsertField$Value",
+"transforms.InsertField.static.field": "MessageSource",
+"transforms.InsertField.static.value": "Kafka Connect framework",
+"transforms.InsertField.predicate": "IsTombstone",
+"transforms.InsertField.negate": "true",
+
+
+"predicates": "IsTombstone",
+"predicates.IsTombstone.type": "org.apache.kafka.connect.transforms.predicates.RecordIsTombstone",
+
+"transforms.RawToData.type": "kafka.connect.transforms.kafka.Raw2DataTransformer$Value",
+
+
+"transforms.RawToData.op.field.name": "operation",
+"transforms.RawToData.raw2data.timestamp.field.name" : "tc",
+
+"max.poll.records": 2
+
+
+
+}

@@ -3,11 +3,13 @@ package kafka.connect.transforms.kafka
 import org.apache.kafka.common.cache.Cache
 import org.apache.kafka.common.config.ConfigDef
 import org.apache.kafka.connect.connector.ConnectRecord
-import org.apache.kafka.connect.data.{Schema, Struct}
+import org.apache.kafka.connect.data.{Schema, Struct, Values}
 import org.apache.kafka.connect.transforms.Transformation
 import org.apache.kafka.connect.transforms.util.SimpleConfig
 import org.apache.kafka.common.cache.LRUCache
 import org.apache.kafka.common.cache.SynchronizedCache
+import org.apache.kafka.common.header.Header
+import org.apache.kafka.connect.header.{ConnectHeaders, Headers}
 import org.apache.kafka.connect.transforms.util.Requirements.{requireStruct, requireStructOrNull}
 import org.slf4j.LoggerFactory
 
@@ -22,6 +24,9 @@ import java.util
   private var TS_fieldName: String = _
    private var schemaUpdateCache: Cache[Schema, Schema] = null
    private val PURPOSE = "adding fields from headers"
+   var headers = new ConnectHeaders
+   private var operation = ""
+    val topicCommitTimestamp = System.currentTimeMillis()
 
   private object ConfigName {
     val OP_FIELD_NAME = "op.field.name"
@@ -77,11 +82,11 @@ import java.util
      logger.info("RECORD:" + record)
      logger.info("RECORD STRUCT:" + value.toString)
 
+     val after = requireStructOrNull(value.getStruct("after"), PURPOSE)
+     val before = requireStructOrNull(value.getStruct("before"), PURPOSE)
+     val dbCommitTime = requireStructOrNull(value.getStruct("header"),PURPOSE).get("timestamp")
 
      for (field <- updatedValue.schema.fields) {
-
-       val after = requireStructOrNull(value.getStruct("after"),PURPOSE)
-       val before = requireStructOrNull(value.getStruct("before"),PURPOSE)
 
        field.name() match {
          case "magic" => updatedValue.put(field.name, value.get(field.name()))
@@ -91,19 +96,19 @@ import java.util
 
 
            if (before != null && after != null) {
-             val operation = "U"
+             operation = "U"
              logger.info("VALUE FIELD:" + field.name() + " " + after.get(field.name())  + " "  )
              updatedValue.put(field.name, after.get(field.name()))
            }
 
            else if (after != null) {
-             val operation = "I"
+             operation = "I"
              logger.info("VALUE FIELD:" + field.name() + " " + after.get(field.name())  + " "  )
              updatedValue.put(field.name, after.get(field.name()))
 
            }
            else if (before != null) {
-             val operation = "D"
+             operation = "D"
              updatedValue = null // generate tombstone markers
              updatedSchema = null
            }
@@ -115,7 +120,20 @@ import java.util
 
        }
 
-      newRecord(record, updatedSchema, updatedValue)
+     headers = new ConnectHeaders  //Reinitialize for every record
+     headers.add("tc", dbCommitTime.toString.getBytes(), Schema.BYTES_SCHEMA) //Database commit timestamp
+     headers.add("ta", record.timestamp().toString.getBytes(), Schema.BYTES_SCHEMA) //Abinitio kafka commit timestamp
+     headers.add("tr", topicCommitTimestamp.toString.getBytes(), Schema.BYTES_SCHEMA) // Datatopic message creation timestamp
+     headers.add("o", operation.getBytes(), Schema.BYTES_SCHEMA)  // operation
+
+
+     //print headers
+     for(header <- headers){
+       logger.info("HEADER: " + header)
+     }
+
+
+     newRecord(record, updatedSchema, updatedValue)
 
    }
 
@@ -168,7 +186,7 @@ object Raw2DataTransformer {
 
     override protected def operatingValue(record: R): Object =  record.value()
 
-    override protected def newRecord(record: R, updatedSchema: Schema, updatedValue: Object): R = record.newRecord(record.topic, record.kafkaPartition, record.keySchema, record.key, updatedSchema, updatedValue, record.timestamp)
+    override protected def newRecord(record: R, updatedSchema: Schema, updatedValue: Object): R = record.newRecord(record.topic, record.kafkaPartition, record.keySchema, record.key, updatedSchema, updatedValue, topicCommitTimestamp,headers)
   }
 
 }
