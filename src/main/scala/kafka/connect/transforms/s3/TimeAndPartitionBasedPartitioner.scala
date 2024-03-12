@@ -75,7 +75,8 @@ class TimeAndPartitionBasedPartitioner extends TimeBasedPartitioner {
    partition
  }
 
-
+  override def generatePartitionedPath(topic: String, encodedPartition: String): String =
+    super.generatePartitionedPath(topic, encodedPartition)
 }
 
 

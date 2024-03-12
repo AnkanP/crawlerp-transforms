@@ -17,6 +17,20 @@ import org.apache.kafka.connect.data.SchemaBuilder
 import scala.collection.JavaConversions._
 import java.util
 
+/**
+ * <R extends TableRecord<R>>
+
+It means a class of type R, that implements the interface TableRecord<R>
+
+TableRecord<R> means that the interface is bound to the same type R.
+
+An example would be a class like:
+
+public class Bla implements TableRecord<Bla>
+I admit this seems a bit strange, but Java generics don't really differentiate between extends and implements, which leads to some confusion.
+ *
+ * @tparam R
+ */
  abstract class Raw2DataTransformer[R <: ConnectRecord[R]] extends Transformation[R]{
 
    final val logger = LoggerFactory.getLogger(classOf[Transformation[R]])
@@ -83,10 +97,25 @@ import java.util
     // builder.doc(schema.doc())
     // builder.defaultValue(1)
 
+    // System.out.println("DEBUG SCHEMA" + schema.valueSchema().fields().toString)
+    // System.out.println("DEBUG SCHEMA" + schema.valueSchema().`type`().toString)
+     //System.out.println("DEBUG SCHEMA" + schema.valueSchema().parameters().toString)
+
+     try{
+
+       System.out.println("DEBUG SCHEMA" + builder.parameters().toString)
+//       System.out.println("DEBUG SCHEMA" + schema.valueSchema().parameters().toString)
+
+     } catch {
+       case e: Exception =>
+         logger.error("PARAMETERS IS EMPTY!!")
+     }
+
+
+
      for (field <- schema.fields) {
 
-       logger.info("FIELDS:" + field.name() + " " +field.schema() )
-
+       logger.info("FIELDS:" + field.name() + " " +field.schema()    )
 
 
        field.name() match {
