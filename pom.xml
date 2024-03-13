@@ -18,7 +18,7 @@
     <maven.compiler.source>1.8</maven.compiler.source>
     <maven.compiler.target>1.8</maven.compiler.target>
     <encoding>UTF-8</encoding>
-    <scala.version>2.12.6</scala.version>
+    <scala.version>2.12.18</scala.version>
     <scala.compat.version>2.12</scala.compat.version>
     <spec2.version>4.2.0</spec2.version>
     <confluent.version>5.5.2</confluent.version>
@@ -37,12 +37,16 @@
     <maven.assembly.plugin.version>2.6</maven.assembly.plugin.version>
   </properties>
 
-
   <repositories>
     <repository>
       <id>confluent</id>
       <url>https://packages.confluent.io/maven/</url>
     </repository>
+    <repository>
+      <id>maven</id>
+      <url>https://repo.maven.apache.org/maven2</url>
+    </repository>
+
   </repositories>
 
   <dependencyManagement>
@@ -57,9 +61,6 @@
       </dependency>
     </dependencies>
   </dependencyManagement>
-
-
-
 
 
 
@@ -93,10 +94,6 @@
     </dependency>
 
 
-
-
-
-
     <!-- Test -->
     <dependency>
       <groupId>junit</groupId>
@@ -104,12 +101,25 @@
       <version>${junit.version}</version>
       <scope>test</scope>
     </dependency>
+
+    <!-- https://mvnrepository.com/artifact/org.scalatest/scalatest -->
+
+    <!-- https://mvnrepository.com/artifact/org.scalatest/scalatest-flatspec -->
+    <dependency>
+      <groupId>org.scalatest</groupId>
+      <artifactId>scalatest-flatspec_2.12</artifactId>
+      <version>3.3.0-alpha.1</version>
+      <scope>test</scope>
+    </dependency>
+
+
     <dependency>
       <groupId>org.scalatest</groupId>
       <artifactId>scalatest_${scala.compat.version}</artifactId>
       <version>${scalatest.version}</version>
       <scope>test</scope>
     </dependency>
+
     <dependency>
       <groupId>org.specs2</groupId>
       <artifactId>specs2-core_${scala.compat.version}</artifactId>
@@ -140,6 +150,29 @@
       <groupId>org.apache.logging.log4j</groupId>
       <artifactId>log4j-slf4j-impl</artifactId>
       <version>${log4j.sl4j.impl.version}</version>
+    </dependency>
+
+    <!-- https://mvnrepository.com/artifact/com.dimafeng/testcontainers-scala -->
+    <dependency>
+      <groupId>com.dimafeng</groupId>
+      <artifactId>testcontainers-scala_2.12</artifactId>
+      <version>0.41.3</version>
+      <scope>test</scope>
+    </dependency>
+
+    <!-- https://mvnrepository.com/artifact/org.scalatestplus/scalatestplus-junit -->
+    <dependency>
+      <groupId>org.scalatestplus</groupId>
+      <artifactId>scalatestplus-junit_2.12</artifactId>
+      <version>1.0.0-M2</version>
+    </dependency>
+
+
+    <dependency>
+      <groupId>org.postgresql</groupId>
+      <artifactId>postgresql</artifactId>
+      <version>42.7.2</version>
+      <scope>runtime</scope>
     </dependency>
 
   </dependencies>
@@ -215,9 +248,9 @@
           <reportsDirectory>${project.build.directory}/surefire-reports</reportsDirectory>
           <junitxml>.</junitxml>
           <filereports>TestSuiteReport.txt</filereports>
+          <suites>samples.StackSuite</suites>
           <!-- Comma separated list of JUnit test class names to execute -->
-          <jUnitClasses>samples.AppTest</jUnitClasses>
-          <skipTests>true</skipTests>
+          <skipTests>false</skipTests>
         </configuration>
         <executions>
           <execution>
