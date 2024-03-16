@@ -19,12 +19,17 @@ class TimeAndPartitionBasedPartitioner extends TimeBasedPartitioner {
   var vtimeZone:DateTimeZone = null
   var vpartitionDurationMs: Long = 0
   var vPathFormat = ""
+
+  var directoryPrefix: Object = _
   override def init(partitionDurationMs: Long, pathFormat: String, locale: Locale, timeZone: DateTimeZone, config: util.Map[String, Object]): Unit =
     {
 
       vtimeZone = timeZone
       vpartitionDurationMs = partitionDurationMs
       vPathFormat = pathFormat
+      directoryPrefix = config.get("directory.prefix")
+
+
 
       super.init(partitionDurationMs, pathFormat, locale, timeZone, config)
 
@@ -34,7 +39,7 @@ class TimeAndPartitionBasedPartitioner extends TimeBasedPartitioner {
    var timestampPartitions = ""
 
    vPathFormat match {
-     case "YYYYMMdd" => {
+     case "YYYYMMdd"|"YYYY-MM-dd" => {
        timestampPartitions = super.encodePartition(sinkRecord, nowInMillis)
        logger.info("time partition" + timestampPartitions)
        logger.info("millis: " + nowInMillis.toString)
@@ -49,7 +54,7 @@ class TimeAndPartitionBasedPartitioner extends TimeBasedPartitioner {
    }
 
    val partition_no = sinkRecord.kafkaPartition().toString
-   val partition =  timestampPartitions + this.delim + partition_no
+   val partition =    timestampPartitions + this.delim + partition_no
    logger.info("Encoded partition : {}", partition)
    partition
 
@@ -59,7 +64,7 @@ class TimeAndPartitionBasedPartitioner extends TimeBasedPartitioner {
    var timestampPartitions = ""
 
    vPathFormat match {
-     case "YYYYMMDD" => timestampPartitions = super.encodePartition(sinkRecord )
+     case "YYYYMMdd"|"YYYY-MM-dd" => timestampPartitions = super.encodePartition(sinkRecord )
      case "YYYYMMDDHHmm" => {
        val adjustedTimestamp = vtimeZone.convertUTCToLocal(now().getMillis)
        val partitionedTime = adjustedTimestamp / vpartitionDurationMs * vpartitionDurationMs
@@ -75,8 +80,12 @@ class TimeAndPartitionBasedPartitioner extends TimeBasedPartitioner {
    partition
  }
 
+
+  // override this  method to generate a custom top level directory
   override def generatePartitionedPath(topic: String, encodedPartition: String): String =
-    super.generatePartitionedPath(topic, encodedPartition)
+    //super.generatePartitionedPath(topic, encodedPartition)
+    directoryPrefix.toString + encodedPartition
+
 }
 
 

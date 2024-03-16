@@ -1,40 +1,33 @@
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
   <modelVersion>4.0.0</modelVersion>
-  <groupId>kafka.connect.transforms</groupId>
+
+  <groupId>org.co.ds.kafka.connect.transforms</groupId>
   <artifactId>kafka-connect-transforms</artifactId>
   <version>1.0-SNAPSHOT</version>
   <name>${project.artifactId}</name>
-  <description>My wonderfull scala app</description>
-  <inceptionYear>2018</inceptionYear>
-  <licenses>
-    <license>
-      <name>My License</name>
-      <url>http://....</url>
-      <distribution>repo</distribution>
-    </license>
-  </licenses>
+  <description>custom kafka connect transforms</description>
+
 
   <properties>
-    <maven.compiler.source>1.8</maven.compiler.source>
-    <maven.compiler.target>1.8</maven.compiler.target>
+    <maven.compiler.source>11</maven.compiler.source>
+    <maven.compiler.target>11</maven.compiler.target>
+    <maven.compiler.plugin.version>3.12.1</maven.compiler.plugin.version>
+    <maven.assembly.plugin.version>2.6</maven.assembly.plugin.version>
+    <scala.maven.plugin.version>3.3.2</scala.maven.plugin.version>
+    <kafka.version>3.7.0</kafka.version>
+    <confluent.version>11.2.4</confluent.version>
     <encoding>UTF-8</encoding>
-    <scala.version>2.12.18</scala.version>
+    <scala.version>2.12.6</scala.version>
     <scala.compat.version>2.12</scala.compat.version>
-    <spec2.version>4.2.0</spec2.version>
-    <confluent.version>5.5.2</confluent.version>
-    <kafka.connect.api.version>2.3.0</kafka.connect.api.version>
-    <junit.version>4.12</junit.version>
-    <scalatest.version>3.0.5</scalatest.version>
-    <apache.commons.logging.version>1.2</apache.commons.logging.version>
+
     <log4j.api.version>2.13.3</log4j.api.version>
     <log4j.core.version>2.13.3</log4j.core.version>
     <log4j.sl4j.impl.version>2.13.3</log4j.sl4j.impl.version>
-    <maven.shade.plugin.version>3.4.1</maven.shade.plugin.version>
-    <scala.maven.plugin.version>3.3.2</scala.maven.plugin.version>
-    <maven.surefire.plugin.version>2.21.0</maven.surefire.plugin.version>
-    <scalatest.maven.plugin.version>2.0.0</scalatest.maven.plugin.version>
     <joda.time.version>2.10.2</joda.time.version>
-    <maven.assembly.plugin.version>2.6</maven.assembly.plugin.version>
+
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <project.package.home>target/${project.artifactId}-${project.version}-package</project.package.home>
+
   </properties>
 
   <repositories>
@@ -49,18 +42,6 @@
 
   </repositories>
 
-  <dependencyManagement>
-    <dependencies>
-      <!-- https://mvnrepository.com/artifact/io.confluent/kafka-connect-storage-cloud -->
-      <dependency>
-        <groupId>io.confluent</groupId>
-        <artifactId>kafka-connect-storage-cloud</artifactId>
-        <version>10.5.7</version>
-        <type>pom</type>
-        <scope>import</scope>
-      </dependency>
-    </dependencies>
-  </dependencyManagement>
 
 
 
@@ -77,61 +58,44 @@
       <artifactId>kafka-connect-storage-partitioner</artifactId>
       <version>${confluent.version}</version>
     </dependency>
+
     <dependency>
       <groupId>joda-time</groupId>
       <artifactId>joda-time</artifactId>
       <version>${joda.time.version}</version>
     </dependency>
+
+    <!-- remove connect-api dependencies
     <dependency>
       <groupId>org.apache.kafka</groupId>
       <artifactId>connect-api</artifactId>
-      <version>${kafka.connect.api.version}</version>
+      <version>${kafka.version}</version>
+      <scope>provided</scope>
     </dependency>
     <dependency>
       <groupId>org.apache.kafka</groupId>
+      <artifactId>connect-runtime</artifactId>
+      <version>${kafka.version}</version>
+      <scope>provided</scope>
+      <exclusions>
+        <exclusion>
+          <groupId>org.slf4j</groupId>
+          <artifactId>slf4j-log4j12</artifactId>
+        </exclusion>
+      </exclusions>
+    </dependency>
+
+
+    -->
+
+
+    <dependency>
+      <groupId>org.apache.kafka</groupId>
       <artifactId>connect-transforms</artifactId>
-      <version>${kafka.connect.api.version}</version>
+      <version>${kafka.version}</version>
+      <scope>provided</scope>
     </dependency>
 
-
-    <!-- Test -->
-    <dependency>
-      <groupId>junit</groupId>
-      <artifactId>junit</artifactId>
-      <version>${junit.version}</version>
-      <scope>test</scope>
-    </dependency>
-
-    <!-- https://mvnrepository.com/artifact/org.scalatest/scalatest -->
-
-    <!-- https://mvnrepository.com/artifact/org.scalatest/scalatest-flatspec -->
-    <dependency>
-      <groupId>org.scalatest</groupId>
-      <artifactId>scalatest-flatspec_2.12</artifactId>
-      <version>3.3.0-alpha.1</version>
-      <scope>test</scope>
-    </dependency>
-
-
-    <dependency>
-      <groupId>org.scalatest</groupId>
-      <artifactId>scalatest_${scala.compat.version}</artifactId>
-      <version>${scalatest.version}</version>
-      <scope>test</scope>
-    </dependency>
-
-    <dependency>
-      <groupId>org.specs2</groupId>
-      <artifactId>specs2-core_${scala.compat.version}</artifactId>
-      <version>${spec2.version}</version>
-      <scope>test</scope>
-    </dependency>
-    <dependency>
-      <groupId>org.specs2</groupId>
-      <artifactId>specs2-junit_${scala.compat.version}</artifactId>
-      <version>${spec2.version}</version>
-      <scope>test</scope>
-    </dependency>
 
     <!-- sl4j logger with log4j-->
     <dependency>
@@ -152,28 +116,6 @@
       <version>${log4j.sl4j.impl.version}</version>
     </dependency>
 
-    <!-- https://mvnrepository.com/artifact/com.dimafeng/testcontainers-scala -->
-    <dependency>
-      <groupId>com.dimafeng</groupId>
-      <artifactId>testcontainers-scala_2.12</artifactId>
-      <version>0.41.3</version>
-      <scope>test</scope>
-    </dependency>
-
-    <!-- https://mvnrepository.com/artifact/org.scalatestplus/scalatestplus-junit -->
-    <dependency>
-      <groupId>org.scalatestplus</groupId>
-      <artifactId>scalatestplus-junit_2.12</artifactId>
-      <version>1.0.0-M2</version>
-    </dependency>
-
-
-    <dependency>
-      <groupId>org.postgresql</groupId>
-      <artifactId>postgresql</artifactId>
-      <version>42.7.2</version>
-      <scope>runtime</scope>
-    </dependency>
 
   </dependencies>
 
@@ -208,9 +150,6 @@
       </plugin>
 
 
-
-
-
       <plugin>
         <!-- see http://davidb.github.com/scala-maven-plugin -->
         <groupId>net.alchim31.maven</groupId>
@@ -231,36 +170,7 @@
           </execution>
         </executions>
       </plugin>
-      <plugin>
-        <groupId>org.apache.maven.plugins</groupId>
-        <artifactId>maven-surefire-plugin</artifactId>
-        <version>${maven.surefire.plugin.version}</version>
-        <configuration>
-          <!-- Tests will be run with scalatest-maven-plugin instead -->
-          <skipTests>true</skipTests>
-        </configuration>
-      </plugin>
-      <plugin>
-        <groupId>org.scalatest</groupId>
-        <artifactId>scalatest-maven-plugin</artifactId>
-        <version>${scalatest.maven.plugin.version}</version>
-        <configuration>
-          <reportsDirectory>${project.build.directory}/surefire-reports</reportsDirectory>
-          <junitxml>.</junitxml>
-          <filereports>TestSuiteReport.txt</filereports>
-          <suites>samples.StackSuite</suites>
-          <!-- Comma separated list of JUnit test class names to execute -->
-          <skipTests>false</skipTests>
-        </configuration>
-        <executions>
-          <execution>
-            <id>test</id>
-            <goals>
-              <goal>test</goal>
-            </goals>
-          </execution>
-        </executions>
-      </plugin>
+
     </plugins>
   </build>
 </project>

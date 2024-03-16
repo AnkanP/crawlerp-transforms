@@ -250,8 +250,7 @@ I admit this seems a bit strange, but Java generics don't really differentiate b
        }
 
        }
-     66.toByte
-BigInt(dbCommitTime).toByteArray
+
 
      headers = new ConnectHeaders  //Reinitialize for every record
      headers.add("tc", BigInt(dbCommitTime).toByteArray, Schema.BYTES_SCHEMA) //Database commit timestamp
