@@ -1,0 +1,28 @@
+{
+    "name": "kafkasink-json-converter-5",
+    "connector.class": "org.example.KafkaSinkConnector",
+    "topics": "json_datatype_input_v5",
+    "destination.topic": "json_datatype_output_v5",
+    "connect.meta.data": "false",
+    "destination.bootstrap.servers": "broker:29092",
+    "destination.schema.registry.url": "http://schema-registry:8089",
+    "kafka.producer.configs": "key.serializer=io.confluent.kafka.serializers.KafkaAvroSerializer,value.serializer=io.confluent.kafka.serializers.KafkaAvroSerializer,acks=all,retries=300,retry.backoff.ms=1000,max.block.ms=60000,request.timeout.ms=30000,delivery.timeout.ms=120000,enable.idempotence=true,max.in.flight.requests.per.connection=3",
+    "tasks.max": "1",
+    "value.converter": "org.apache.kafka.connect.storage.StringConverter",
+    "key.converter": "org.apache.kafka.connect.storage.StringConverter",
+    "header.converter": "org.apache.kafka.connect.converters.ByteArrayConverter",
+    "key.converter.schemas.enable": false,
+    "value.converter.schemas.enable": false,
+    "transforms": "StagingVal,SetSchemaMetadata,AddValNamespace,AddKeyNamespace",
+    "transforms.StagingVal.type": "kafka.connect.transforms.kafka.StagingToDataTransformer$Value",
+    "transforms.StagingVal.value.json.node": "bodyFields",
+    "transforms.StagingVal.key.json.node": "keyFields",
+
+    "transforms.SetSchemaMetadata.type": "org.apache.kafka.connect.transforms.SetSchemaMetadata$Value",
+    "transforms.SetSchemaMetadata.schema.name": "StagingTopic",
+    "transforms.SetSchemaMetadata.schema.version": "1",
+    "transforms.AddValNamespace.type": "org.apache.kafka.connect.transforms.SetSchemaMetadata$Value",
+    "transforms.AddValNamespace.schema.name": "org.co.ds.stagingTopicVal",
+    "transforms.AddKeyNamespace.type": "org.apache.kafka.connect.transforms.SetSchemaMetadata$Key",
+    "transforms.AddKeyNamespace.schema.name": "org.co.ds.stagingTopicKey"
+}
