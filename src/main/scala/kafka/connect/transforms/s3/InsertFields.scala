@@ -201,28 +201,29 @@ abstract class InsertFields[R <: ConnectRecord[R]] extends Transformation[R] {
     }
 
     for ((k,v) <- nonKeyFieldMap) {
-        logger.info("type:" + v.schema()  + "schematype: " + v.schema().`type`())
+      logger.info("type:" + v.schema() + "schematype: " + v.schema().`type`())
 
-        v.schema().toString match {
-          case "Schema{STRING}" => builder.field(k, Schema.OPTIONAL_STRING_SCHEMA)
-          case "Schema{INT64}" => builder.field(k, Schema.OPTIONAL_INT64_SCHEMA)
-          case "Schema{INT32}" => builder.field(k, Schema.OPTIONAL_INT32_SCHEMA)
-          case "Schema{INT16}" => builder.field(k, Schema.OPTIONAL_INT16_SCHEMA)
-          case "Schema{INT8}" => builder.field(k, Schema.OPTIONAL_INT8_SCHEMA)
-          case "Schema{FLOAT32}" => builder.field(k, Schema.OPTIONAL_FLOAT32_SCHEMA)
-          case "Schema{FLOAT64}" => builder.field(k, Schema.OPTIONAL_FLOAT64_SCHEMA)
-          case "Schema{BYTES}" => builder.field(k, Schema.OPTIONAL_BYTES_SCHEMA)
-          case "Schema{BOOLEAN}" => builder.field(k, Schema.OPTIONAL_BOOLEAN_SCHEMA)
-          case "Schema{org.apache.kafka.connect.data.Date:INT32}" =>  builder.field(k, SchemaBuilder.int32().name("org.apache.kafka.connect.data.Date").optional.version(1).build)
-          case "Schema{org.apache.kafka.connect.data.Decimal:BYTES}" =>  {
-            val scale = v.schema().parameters().get("scale").toInt
-            builder.field(k, SchemaBuilder.bytes.name("org.apache.kafka.connect.data.Decimal").optional().parameter("scale", scale.toString).version(1).build())
-          }
-
-          case default  => builder.field(k,v.schema()).optional().build()
+      v.schema().toString match {
+        case "Schema{STRING}" => builder.field(k, Schema.OPTIONAL_STRING_SCHEMA)
+        case "Schema{INT64}" => builder.field(k, Schema.OPTIONAL_INT64_SCHEMA)
+        case "Schema{INT32}" => builder.field(k, Schema.OPTIONAL_INT32_SCHEMA)
+        case "Schema{INT16}" => builder.field(k, Schema.OPTIONAL_INT16_SCHEMA)
+        case "Schema{INT8}" => builder.field(k, Schema.OPTIONAL_INT8_SCHEMA)
+        case "Schema{FLOAT32}" => builder.field(k, Schema.OPTIONAL_FLOAT32_SCHEMA)
+        case "Schema{FLOAT64}" => builder.field(k, Schema.OPTIONAL_FLOAT64_SCHEMA)
+        case "Schema{BYTES}" => builder.field(k, Schema.OPTIONAL_BYTES_SCHEMA)
+        case "Schema{BOOLEAN}" => builder.field(k, Schema.OPTIONAL_BOOLEAN_SCHEMA)
+        case "Schema{org.apache.kafka.connect.data.Date:INT32}" => builder.field(k, SchemaBuilder.int32().name("org.apache.kafka.connect.data.Date").optional.version(1).build)
+        case "Schema{org.apache.kafka.connect.data.Decimal:BYTES}" => {
+          val scale = v.schema().parameters().get("scale").toInt
+          builder.field(k, SchemaBuilder.bytes.name("org.apache.kafka.connect.data.Decimal").optional().parameter("scale", scale.toString).version(1).build())
         }
 
+        case default => builder.field(k, v.schema()).optional().build()
+      }
+
     }
+
 
     for (s <- builder.fields()) {
       logger.info("INSIDE OPTIONAL FUNC FIELDS" + s.name() + " " + s.schema() + " isoptional: " + s.schema().isOptional + "defaultvalue: " + s.schema().defaultValue())

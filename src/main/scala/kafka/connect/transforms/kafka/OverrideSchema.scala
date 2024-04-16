@@ -1,7 +1,6 @@
 package kafka.connect.transforms.kafka
 
 
-import kafka.connect.transforms.s3.InsertFields
 import org.apache.kafka.common.cache.{Cache, LRUCache, SynchronizedCache}
 import org.apache.kafka.common.config.{ConfigDef, ConfigException}
 import org.apache.kafka.connect.connector.ConnectRecord
@@ -14,15 +13,13 @@ import org.slf4j.LoggerFactory
 
 import java.util
 import scala.collection.JavaConverters._
-
-
 import java.nio.charset.StandardCharsets
-import scala.collection.convert.ImplicitConversions.`collection AsScalaIterable`
+
 
 abstract class OverrideSchema[R <: ConnectRecord[R]] extends Transformation[R] {
 
   private final val OVERVIEW_DOC = "schema overrides";
-  final val logger = LoggerFactory.getLogger(classOf[InsertFields[R]])
+  final val logger = LoggerFactory.getLogger(classOf[OverrideSchema[R]])
 
   private var VARCHAR_TO_VARBINARY_FIELDS: util.List[String] = _
 
@@ -95,9 +92,9 @@ abstract class OverrideSchema[R <: ConnectRecord[R]] extends Transformation[R] {
 
 
 
-      for (s <- updatedSchema.schema().fields().asScala) {
-        logger.info("updated schema: " + s.name() + " " + s.schema() )
-      }
+    for (s <- updatedSchema.schema().fields().asScala) {
+      logger.info("updated schema: " + s.name() + " " + s.schema() )
+    }
 
     for (s <- value.schema().fields().asScala) {
       logger.info("updated fields: " + s.name() + "value: " + value.get(s.name()))
@@ -117,65 +114,65 @@ abstract class OverrideSchema[R <: ConnectRecord[R]] extends Transformation[R] {
     }
 
 
-        for (s <- updatedSchema.schema().fields().asScala) {
-          logger.info("updated fields after: " + s.name() + " " + s.schema() + " value : " + updatedValue.get(s.name()))
-        }
-
-
-      newRecord(record, updatedSchema, updatedValue)
+    for (s <- updatedSchema.schema().fields().asScala) {
+      logger.info("updated fields after: " + s.name() + " " + s.schema() + " value : " + updatedValue.get(s.name()))
     }
 
 
-    private def convertToLowerCase(schema: Schema): Schema = {
-      val builder: SchemaBuilder = SchemaUtil.copySchemaBasics(schema, SchemaBuilder.struct)
+    newRecord(record, updatedSchema, updatedValue)
+  }
 
-      for (schema <- schema.fields().asScala) {
-        builder.field(schema.name().toLowerCase, schema.schema())
-      }
-      builder.build()
+
+  private def convertToLowerCase(schema: Schema): Schema = {
+    val builder: SchemaBuilder = SchemaUtil.copySchemaBasics(schema, SchemaBuilder.struct)
+
+    for (schema <- schema.fields().asScala) {
+      builder.field(schema.name().toLowerCase, schema.schema())
     }
+    builder.build()
+  }
 
-    private def schemaConversion(schema: Schema, fieldList: util.List[String]) = {
-      val builder: SchemaBuilder = SchemaUtil.copySchemaBasics(schema, SchemaBuilder.struct)
-      for (schema <- schema.fields().asScala) {
+  private def schemaConversion(schema: Schema, fieldList: util.List[String]) = {
+    val builder: SchemaBuilder = SchemaUtil.copySchemaBasics(schema, SchemaBuilder.struct)
+    for (schema <- schema.fields().asScala) {
 
-        if (fieldList.contains(schema.name())) {
-          schema.schema().toString match {
-            case "Schema{STRING}" => {
-              if (!schema.schema().isOptional) builder.field(schema.name(), Schema.BYTES_SCHEMA)
-              else builder.field(schema.name(), Schema.OPTIONAL_BYTES_SCHEMA)
-            }
-            case "Schema{org.apache.kafka.connect.data.Decimal:BYTES}" => if (!schema.schema().isOptional) builder.field(schema.name(), Schema.FLOAT64_SCHEMA)
-            else builder.field(schema.name(), Schema.OPTIONAL_FLOAT64_SCHEMA)
-            case default => builder.field(schema.name(), schema.schema())
+      if (fieldList.contains(schema.name())) {
+        schema.schema().toString match {
+          case "Schema{STRING}" => {
+            if (!schema.schema().isOptional) builder.field(schema.name(), Schema.BYTES_SCHEMA)
+            else builder.field(schema.name(), Schema.OPTIONAL_BYTES_SCHEMA)
           }
-        } else {
-          builder.field(schema.name(), schema.schema())
+          case "Schema{org.apache.kafka.connect.data.Decimal:BYTES}" => if (!schema.schema().isOptional) builder.field(schema.name(), Schema.FLOAT64_SCHEMA)
+          else builder.field(schema.name(), Schema.OPTIONAL_FLOAT64_SCHEMA)
+          case default => builder.field(schema.name(), schema.schema())
         }
-
-
+      } else {
+        builder.field(schema.name(), schema.schema())
       }
-      builder.build()
+
+
     }
+    builder.build()
+  }
+}
+
+object OverrideSchema {
+  //static implementation
+
+  class Key[R <: ConnectRecord[R]] extends OverrideSchema[R] {
+    override protected def operatingSchema(record: R): Schema = record.keySchema
+
+    override protected def operatingValue(record: R): Object = record.key
+
+    override protected def newRecord(record: R, updatedSchema: Schema, updatedValue: Object): R = record.newRecord(record.topic, record.kafkaPartition, updatedSchema, updatedValue, record.valueSchema, record.value, record.timestamp)
   }
 
-  object OverrideSchema {
-    //static implementation
+  class Value[R <: ConnectRecord[R]] extends OverrideSchema[R] {
+    override protected def operatingSchema(record: R): Schema = if (record.valueSchema != null) record.valueSchema() else record.keySchema()
 
-    class Key[R <: ConnectRecord[R]] extends OverrideSchema[R] {
-      override protected def operatingSchema(record: R): Schema = record.keySchema
+    override protected def operatingValue(record: R): Object = if (record.value != null) record.value() else record.key()
 
-      override protected def operatingValue(record: R): Object = record.key
-
-      override protected def newRecord(record: R, updatedSchema: Schema, updatedValue: Object): R = record.newRecord(record.topic, record.kafkaPartition, updatedSchema, updatedValue, record.valueSchema, record.value, record.timestamp)
-    }
-
-    class Value[R <: ConnectRecord[R]] extends OverrideSchema[R] {
-      override protected def operatingSchema(record: R): Schema = if (record.valueSchema != null) record.valueSchema() else record.keySchema()
-
-      override protected def operatingValue(record: R): Object = if (record.value != null) record.value() else record.key()
-
-      override protected def newRecord(record: R, updatedSchema: Schema, updatedValue: Object): R = record.newRecord(record.topic, record.kafkaPartition, record.keySchema, record.key, updatedSchema, updatedValue, record.timestamp)
-    }
-
+    override protected def newRecord(record: R, updatedSchema: Schema, updatedValue: Object): R = record.newRecord(record.topic, record.kafkaPartition, record.keySchema, record.key, updatedSchema, updatedValue, record.timestamp)
   }
+
+}

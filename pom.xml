@@ -3,7 +3,7 @@
 
   <groupId>org.co.ds.kafka.connect.transforms</groupId>
   <artifactId>kafka-connect-transforms</artifactId>
-  <version>1.0-SNAPSHOT</version>
+  <version>1.0.1-SNAPSHOT</version>
   <name>${project.artifactId}</name>
   <description>custom kafka connect transforms</description>
 
@@ -46,6 +46,21 @@
 
 
   <dependencies>
+
+    <dependency>
+      <groupId>com.fasterxml.jackson.core</groupId>
+      <artifactId>jackson-databind</artifactId>
+      <version>2.17.0</version>
+    </dependency>
+
+    <!-- https://mvnrepository.com/artifact/com.fasterxml.jackson.module/jackson-module-scala -->
+    <!--
+    <dependency>
+      <groupId>com.fasterxml.jackson.module</groupId>
+      <artifactId>jackson-module-scala_2.12</artifactId>
+      <version>2.17.0</version>
+    </dependency>
+  -->
     <dependency>
       <groupId>org.scala-lang</groupId>
       <artifactId>scala-library</artifactId>
@@ -59,12 +74,13 @@
       <version>${confluent.version}</version>
     </dependency>
 
+    <!-- DONT USE JODA .. USE JAVA8 Time API
     <dependency>
       <groupId>joda-time</groupId>
       <artifactId>joda-time</artifactId>
       <version>${joda.time.version}</version>
     </dependency>
-
+  -->
     <!-- remove connect-api dependencies
     <dependency>
       <groupId>org.apache.kafka</groupId>
