@@ -26,3 +26,5 @@
     "transforms.AddKeyNamespace.type": "org.apache.kafka.connect.transforms.SetSchemaMetadata$Key",
     "transforms.AddKeyNamespace.schema.name": "org.co.ds.stagingTopicKey"
 }
+
+    "kafka.producer.avro.configs": "allow.optional.map.keys=false,connect.meta.data=false,discard.type.doc.default=true,enhanced.avro.schema.support=false,generalized.sum.type.support=false,ignore.default.for.nullables=false,schemas.cache.config=1000,scrub.invalid.names=false",
