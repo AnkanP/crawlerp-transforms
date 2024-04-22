@@ -34,46 +34,17 @@ I admit this seems a bit strange, but Java generics don't really differentiate b
  abstract class Raw2DataTransformer[R <: ConnectRecord[R]] extends Transformation[R]{
 
    final val logger = LoggerFactory.getLogger(classOf[Transformation[R]])
-
-  //private var OP_fieldName: String = _
-  //private var TS_fieldName: String = _
    private var schemaUpdateCache: Cache[Schema, Schema] = null
    private val PURPOSE = "adding fields from headers"
    var headers = new ConnectHeaders
    private var operation = ""
-    val topicCommitTimestamp = System.currentTimeMillis()
+  var topicCommitTimestamp = System.currentTimeMillis()
 
-   //var VALUE_SCHEMA_NAME = ""
-   //var KEY_SCHEMA_NAME = ""
-  private object ConfigName {
-    val OP_FIELD_NAME = "op.field.name"
-    val TIMESTAMP_FIELD_NAME = "raw2data.timestamp.field.name"
-    val VALUE_SCHEMA_NAME = "raw2data.value.schema.name"
-    val KEY_SCHEMA_NAME = "raw2data.key.schema.name"
-  }
 
   val CONFIG_DEF: ConfigDef = new ConfigDef()
-    //.define(ConfigName.OP_FIELD_NAME, ConfigDef.Type.STRING, ConfigDef.Importance.HIGH, "operation header" )
-    //.define(ConfigName.TIMESTAMP_FIELD_NAME, ConfigDef.Type.STRING, ConfigDef.Importance.HIGH, "raw2data timestamp header")
-    //.define(ConfigName.VALUE_SCHEMA_NAME, ConfigDef.Type.STRING, ConfigDef.Importance.HIGH, "raw2data schema namespace")
-    //.define(ConfigName.KEY_SCHEMA_NAME, ConfigDef.Type.STRING, ConfigDef.Importance.HIGH, "raw2data schema namespace")
 
-
-   def makeUpdatedKeySchema(schema: Schema): Schema = {
-
-
+   private def makeUpdatedKeySchema(schema: Schema): Schema = {
       val builder = SchemaUtil.copySchemaBasics(schema, SchemaBuilder.struct)
-     //val builder = new SchemaBuilder(Type.STRUCT)
-     //val params: java.util.Map[String, String] = schema.parameters()
-
-     //if (params != null) {
-     //  builder.parameters(params)
-    // }
-    // builder.name(KEY_SCHEMA_NAME)
-    // builder.version(1)
-     //builder.doc(schema.doc())
-     // builder.defaultValue(1)
-
      for (field <- schema.fields) {
        builder.field(field.name(),field.schema())
      }
@@ -82,45 +53,15 @@ I admit this seems a bit strange, but Java generics don't really differentiate b
    }
 
 
-   def makeUpdatedSchema(schema: Schema): Schema = {
-
+   private def makeUpdatedSchema(schema: Schema): Schema = {
 
      val builder = SchemaUtil.copySchemaBasics(schema, SchemaBuilder.struct)
-     //val builder = new SchemaBuilder(Type.STRUCT)
-     //val params: java.util.Map[String, String] = schema.parameters()
-
-     //if (params != null) {
-     //  builder.parameters(params)
-    // }
-    // builder.name(VALUE_SCHEMA_NAME)
-    // builder.version(schema.version())
-    // builder.doc(schema.doc())
-    // builder.defaultValue(1)
-
-    // System.out.println("DEBUG SCHEMA" + schema.valueSchema().fields().toString)
-    // System.out.println("DEBUG SCHEMA" + schema.valueSchema().`type`().toString)
-     //System.out.println("DEBUG SCHEMA" + schema.valueSchema().parameters().toString)
-
-     try{
-
-       System.out.println("DEBUG SCHEMA" + builder.parameters().toString)
-//       System.out.println("DEBUG SCHEMA" + schema.valueSchema().parameters().toString)
-
-     } catch {
-       case e: Exception =>
-         logger.error("PARAMETERS IS EMPTY!!")
-     }
-
-
-
      for (field <- schema.fields) {
 
        logger.info("FIELDS:" + field.name() + " " +field.schema()    )
-
-
        field.name() match {
-         case "magic" => builder.field(field.name, field.schema)
-         case "version" => builder.field(field.name, field.schema)
+         //case "magic" => builder.field(field.name, field.schema)
+         //case "version" => builder.field(field.name, field.schema)
          case "after" => {
 
            for(structField <- field.schema().fields()){
@@ -160,7 +101,7 @@ I admit this seems a bit strange, but Java generics don't really differentiate b
 
 
 
-
+     topicCommitTimestamp = System.currentTimeMillis()
      headers = new ConnectHeaders //Reinitialize for every record
     // headers.add("tc", BigInt(dbCommitTime).toByteArray, Schema.BYTES_SCHEMA) //Database commit timestamp
      headers.add("ta", BigInt(record.timestamp()).toByteArray, Schema.BYTES_SCHEMA) //Abinitio kafka commit timestamp
@@ -204,6 +145,7 @@ I admit this seems a bit strange, but Java generics don't really differentiate b
      var updatedValue = new Struct(updatedSchema)
 
      val updatedKey = new Struct(updatedKeySchema)
+
      for (field <- updatedKey.schema.fields) {
        updatedKey.put(field.name(),key.get(field.name()))
      }
@@ -251,7 +193,7 @@ I admit this seems a bit strange, but Java generics don't really differentiate b
 
        }
 
-
+     topicCommitTimestamp = System.currentTimeMillis()
      headers = new ConnectHeaders  //Reinitialize for every record
      headers.add("tc", BigInt(dbCommitTime).toByteArray, Schema.BYTES_SCHEMA) //Database commit timestamp
      headers.add("ta", BigInt(record.timestamp()).toByteArray, Schema.BYTES_SCHEMA) //Abinitio kafka commit timestamp
