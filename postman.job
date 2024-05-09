@@ -1,4 +1,4 @@
-{
+    1`  Q1Q{
     "name": "jdbc-source-postgres-datatypes_1",
     "connector.class": "org.co.ds.kafka.connect.jdbc.JdbcSourceConnector",
     "connection.loginTimeout": "10",

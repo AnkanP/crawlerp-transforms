@@ -8,12 +8,12 @@ import org.apache.kafka.connect.data.{ConnectSchema, Date, Decimal, Schema, Sche
 import org.apache.kafka.connect.transforms.Transformation
 import org.apache.kafka.connect.transforms.util.Requirements.requireStruct
 import org.apache.kafka.connect.transforms.util.{SchemaUtil, SimpleConfig}
-
 import org.slf4j.LoggerFactory
 
 import java.util
 import scala.collection.JavaConverters._
 import java.nio.charset.StandardCharsets
+import java.time.Instant
 
 
 abstract class OverrideSchema[R <: ConnectRecord[R]] extends Transformation[R] {
@@ -97,7 +97,7 @@ abstract class OverrideSchema[R <: ConnectRecord[R]] extends Transformation[R] {
     }
 
     for (s <- value.schema().fields().asScala) {
-      logger.info("updated fields: " + s.name() + "value: " + value.get(s.name()))
+      logger.info("updated fields: " + s.name() + " value: " + value.get(s.name()) + " type=" + value.get(s.name()).getClass)
     }
 
 
@@ -106,10 +106,26 @@ abstract class OverrideSchema[R <: ConnectRecord[R]] extends Transformation[R] {
       if (VARCHAR_TO_VARBINARY_FIELDS.contains(x.name())) {
         x.schema().toString match {
           case "Schema{BYTES}" => updatedValue.put(x.name(), value.get(x.name()).toString.getBytes(StandardCharsets.UTF_8))
-          case default => updatedValue.put(x.name(), value.get(x.name()))
+          case _ => println("EXCEPTION TO BE RAISED!!. Expected field value of type varchar or string")
         }
       } else {
-        updatedValue.put(x.name(), value.get(x.name()))
+        x.schema().toString match {
+          case "Schema{BYTES}" => updatedValue.put(x.name(), value.get(x.name()).toString.getBytes(StandardCharsets.UTF_8))
+          case "Schema{FLOAT64}" => updatedValue.put(x.name(), value.get(x.name()).asInstanceOf[java.math.BigDecimal].doubleValue())
+          //case "Schema{org.apache.kafka.connect.data.Decimal:BYTES}" => updatedValue.put(x.name(), java.math.BigDecimal.valueOf(value.get(x.name()).asInstanceOf[java.lang.Double]))
+          //case "Schema{org.apache.kafka.connect.data.Time:INT32}" => updatedValue.put(x.name(), value.get(x.name()).asInstanceOf[java.sql.Time].getTime * 1000L)
+          case "Schema{org.apache.kafka.connect.data.Timestamp:INT64}" =>{
+            //val instant: Instant = Instant.parse(value.get(x.name()).asInstanceOf[java.sql.Timestamp].toString)
+            val instant: Instant = value.get(x.name()).asInstanceOf[java.sql.Timestamp].toInstant
+            val microseconds = instant.toEpochMilli * 1000L
+            //val timestamp: java.sql.Timestamp = java.sql.Timestamp.from(instant)
+            val timestamp: java.sql.Timestamp = new java.sql.Timestamp(microseconds)
+            updatedValue.put(x.name(), timestamp)
+          }
+          case _ => updatedValue.put(x.name(), value.get(x.name()))
+        }
+
+
       }
     }
 
@@ -142,15 +158,40 @@ abstract class OverrideSchema[R <: ConnectRecord[R]] extends Transformation[R] {
             if (!schema.schema().isOptional) builder.field(schema.name(), Schema.BYTES_SCHEMA)
             else builder.field(schema.name(), Schema.OPTIONAL_BYTES_SCHEMA)
           }
-          case "Schema{org.apache.kafka.connect.data.Decimal:BYTES}" => if (!schema.schema().isOptional) builder.field(schema.name(), Schema.FLOAT64_SCHEMA)
-          else builder.field(schema.name(), Schema.OPTIONAL_FLOAT64_SCHEMA)
-          case default => builder.field(schema.name(), schema.schema())
+          case _ => println("EXCEPTION TO BE RAISED!!. Expected field of type varchar or string")
         }
       } else {
-        builder.field(schema.name(), schema.schema())
+        schema.schema().toString match {
+          case "Schema{org.apache.kafka.connect.data.Decimal:BYTES}" => {
+
+            val scale: Int = schema.schema().parameters().get("scale").toInt
+            logger.info("FIELD=" + schema.schema().name()  + "_PARMETERS=" + schema.schema().parameters().toString + "_SCHEMA=" + schema.schema().toString)
+            val PRECISION_FIELD = "connect.decimal.precision"
+            val precision: Int = schema.schema().parameters().get(PRECISION_FIELD).toInt + 1
+
+            if(scale == 0)
+              builder.field(schema.name(), Schema.FLOAT64_SCHEMA)
+            else {
+              //val PRECISION_FIELD = "connect.decimal.precision"
+              val fieldBuilder = Decimal.builder(scale)
+              fieldBuilder.parameter(PRECISION_FIELD, Integer.toString(precision))
+              fieldBuilder.parameter(PRECISION_FIELD, Integer.toString(scale))
+              builder.field(schema.name(), fieldBuilder.build())
+
+              //builder.field(schema.name(), SchemaBuilder.bytes.name("org.apache.kafka.connect.data.Decimal").optional().parameter("scale", scale.toString).parameter("precision", precision.toString).version(1).build())
+            }
+
+
+          }
+          //case "Schema{org.apache.kafka.connect.data.Timestamp:INT64}" => {
+          //  logger.info("FIELD=" + schema.schema().name()  + "_PARMETERS=" + schema.schema().parameters().toString + "_SCHEMA=" + schema.schema().toString)
+          //  builder.field(schema.name(), schema.schema())
+
+          //}
+
+          case _ => builder.field(schema.name(), schema.schema())
+        }
       }
-
-
     }
     builder.build()
   }
