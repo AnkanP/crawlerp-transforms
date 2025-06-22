@@ -1,0 +1,104 @@
+name: Build & Release Glue Jobs
+
+on:
+  push:
+    branches:
+      - '**'
+    paths:
+      - 'glue-jobs/**'
+
+jobs:
+  package-glue-jobs:
+    runs-on: ubuntu-latest
+
+    env:
+      IS_PROD: ${{ github.ref_name == 'prod' }}
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Get version input or fallback
+        id: versioning
+        run: |
+          if ${{ env.IS_PROD }}; then
+            version=$(date +'%Y.%m.%d')
+            echo "version=$version" >> $GITHUB_OUTPUT
+          else
+            echo "version=latest" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Install shared dependencies
+        run: |
+          mkdir -p shared/python
+          pip install -r glue-jobs/requirements.txt -t shared/python
+
+      - name: Build packages
+        run: |
+          mkdir -p dist
+          for job_dir in glue-jobs/job*/; do
+            job_name=$(basename $job_dir)
+            mkdir -p package
+            cp -r shared/python package/
+            cp $job_dir/job_script.py package/
+            if [ -d "$job_dir/helpers" ]; then
+              cp -r $job_dir/helpers package/
+            fi
+            zip_name="${job_name}-${{ steps.versioning.outputs.version }}.zip"
+            (cd package && zip -r ../dist/$zip_name .)
+            rm -rf package
+          done
+
+      - name: Generate changelog
+        run: |
+          changelog="CHANGELOG-${{ steps.versioning.outputs.version }}.md"
+          echo "# Changelog for ${{ steps.versioning.outputs.version }}" > dist/$changelog
+          git log --pretty=format:"- %s (%an)" --no-merges -n 30 >> dist/$changelog
+
+      - name: Upload to S3
+        if: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: eu-west-1
+        run: |
+          if ${{ env.IS_PROD }}; then
+            for zip in dist/*.zip; do
+              aws s3 cp "$zip" "s3://your-bucket/releases/release-${{ steps.versioning.outputs.version }}/$(basename $zip)"
+            done
+            aws s3 cp "dist/CHANGELOG-${{ steps.versioning.outputs.version }}.md" "s3://your-bucket/releases/release-${{ steps.versioning.outputs.version }}/"
+          else
+            for zip in dist/*.zip; do
+              base=$(basename $zip | sed -E 's/-latest\.zip/.zip/')
+              aws s3 cp "$zip" "s3://your-bucket/releases/latest/$base"
+            done
+            aws s3 cp "dist/CHANGELOG-latest.md" "s3://your-bucket/releases/latest/CHANGELOG.md"
+          fi
+
+      - name: Upload GitHub artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: glue-${{ steps.versioning.outputs.version }}
+          path: dist/*
+
+      - name: Create Git tag & GitHub Release (only on prod)
+        if: ${{ env.IS_PROD }}
+        run: |
+          git config user.name github-actions
+          git config user.email github-actions@github.com
+          git tag v${{ steps.versioning.outputs.version }}
+          git push origin v${{ steps.versioning.outputs.version }}
+
+      - name: Publish GitHub Release (only on prod)
+        if: ${{ env.IS_PROD }}
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.versioning.outputs.version }}
+          name: Release ${{ steps.versioning.outputs.version }}
+          body_path: dist/CHANGELOG-${{ steps.versioning.outputs.version }}.md
+          files: dist/*.zip
