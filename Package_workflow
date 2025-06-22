@@ -1,0 +1,8 @@
+- name: Build Glue job packages with helper script
+  run: |
+    bash scripts/build_glue_jobs.sh \
+      -v "${{ steps.versioning.outputs.version }}" \
+      -r glue-jobs/requirements.txt \
+      -h glue-jobs/helpers \
+      -s glue-jobs \
+      -o dist
