@@ -1,0 +1,77 @@
+#!/bin/bash
+
+set -euo pipefail
+
+# 🧾 Usage
+usage() {
+  echo "Usage: $0 -v <version> -r <requirements_path> -h <helpers_dir> -s <source_dir> -o <output_dir>"
+  exit 1
+}
+
+# 🔧 Parse args
+while getopts ":v:r:h:s:o:" opt; do
+  case ${opt} in
+    v ) VERSION=$OPTARG ;;
+    r ) REQUIREMENTS=$OPTARG ;;
+    h ) HELPERS=$OPTARG ;;
+    s ) SOURCE_DIR=$OPTARG ;;
+    o ) OUTPUT_DIR=$OPTARG ;;
+    * ) usage ;;
+  esac
+done
+
+# ✅ Check required args
+if [[ -z "${VERSION:-}" || -z "${REQUIREMENTS:-}" || -z "${HELPERS:-}" || -z "${SOURCE_DIR:-}" || -z "${OUTPUT_DIR:-}" ]]; then
+  usage
+fi
+
+echo "📦 Building Glue job packages"
+echo "  Version:         $VERSION"
+echo "  Requirements:    $REQUIREMENTS"
+echo "  Helpers folder:  $HELPERS"
+echo "  Job source dir:  $SOURCE_DIR"
+echo "  Output dir:      $OUTPUT_DIR"
+
+mkdir -p "$OUTPUT_DIR"
+mkdir -p shared/python
+pip install -r "$REQUIREMENTS" -t shared/python
+
+# ✍️ Manifest file
+MANIFEST="$OUTPUT_DIR/manifest.yml"
+echo "version: \"$VERSION\"" > "$MANIFEST"
+echo "jobs:" >> "$MANIFEST"
+
+# 📁 Process jobs
+find "$SOURCE_DIR" -mindepth 2 -maxdepth 2 -name '*.py' | while read -r pyfile; do
+  job_script=$(basename "$pyfile")
+  job_name="${job_script%.*}"
+  zip_name="${job_name}-${VERSION}.zip"
+  zip_path="$OUTPUT_DIR/$zip_name"
+
+  echo "➡️ Packaging $job_script → $zip_name"
+
+  mkdir -p package
+
+  # Inject or update __version__
+  tmp_script="package/$job_script"
+  if grep -q '__version__' "$pyfile"; then
+    sed "s/__version__ *= *.*/__version__ = '${VERSION}'/" "$pyfile" > "$tmp_script"
+  else
+    echo "__version__ = '${VERSION}'" > "$tmp_script"
+    cat "$pyfile" >> "$tmp_script"
+  fi
+
+  cp -r "$HELPERS" package/
+  cp -r shared/python package/
+
+  (cd package && zip -qr "../$zip_path" .)
+  rm -rf package
+
+  # 🧮 Generate checksum
+  checksum=$(sha256sum "$zip_path" | awk '{print $1}')
+
+  # ✍️ Add to manifest
+  echo "  - name: \"$job_name\"" >> "$MANIFEST"
+  echo "    file: \"$(basename "$zip_path")\"" >> "$MANIFEST"
+  echo "    checksum: \"$checksum\"" >> "$MANIFEST"
+done
