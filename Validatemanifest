@@ -1,0 +1,62 @@
+#!/bin/bash
+
+set -euo pipefail
+
+# 🧾 Usage
+usage() {
+  echo "Usage: $0 -m <manifest_path> -d <dist_dir>"
+  exit 1
+}
+
+# 🔧 Args
+while getopts ":m:d:" opt; do
+  case ${opt} in
+    m ) MANIFEST=$OPTARG ;;
+    d ) DIST_DIR=$OPTARG ;;
+    * ) usage ;;
+  esac
+done
+
+# ✅ Validate inputs
+if [[ -z "${MANIFEST:-}" || -z "${DIST_DIR:-}" ]]; then
+  usage
+fi
+
+echo "🔍 Validating manifest at $MANIFEST against files in $DIST_DIR"
+
+# 🛠️ Use yq for YAML parsing (install if missing)
+if ! command -v yq &> /dev/null; then
+  echo "Installing yq..."
+  pip install yq
+fi
+
+# Parse version
+VERSION=$(yq '.version' "$MANIFEST")
+echo "🗂️  Manifest version: $VERSION"
+
+# Validate each job
+job_count=$(yq '.jobs | length' "$MANIFEST")
+
+for i in $(seq 0 $((job_count - 1))); do
+  name=$(yq ".jobs[$i].name" "$MANIFEST")
+  file=$(yq ".jobs[$i].file" "$MANIFEST")
+  expected_checksum=$(yq ".jobs[$i].checksum" "$MANIFEST")
+
+  filepath="$DIST_DIR/$file"
+  if [[ ! -f "$filepath" ]]; then
+    echo "❌ Missing ZIP file for job '$name': $file"
+    exit 1
+  fi
+
+  actual_checksum=$(sha256sum "$filepath" | awk '{print $1}')
+  if [[ "$expected_checksum" != "$actual_checksum" ]]; then
+    echo "❌ Checksum mismatch for '$file'"
+    echo "Expected: $expected_checksum"
+    echo "Actual:   $actual_checksum"
+    exit 1
+  fi
+
+  echo "✅ Validated: $file ($name)"
+done
+
+echo "✅ All ZIPs match manifest!"
