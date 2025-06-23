@@ -1,0 +1,48 @@
+sudo bash -c 'cat > /etc/passwd' <<EOF
+root:x:0:0:root:/root:/bin/bash
+daemon:x:1:1:daemon:/usr/sbin:/usr/sbin/nologin
+bin:x:2:2:bin:/bin:/usr/sbin/nologin
+sys:x:3:3:sys:/dev:/usr/sbin/nologin
+sync:x:4:65534:sync:/bin:/bin/sync
+nobody:x:65534:65534:nobody:/nonexistent:/usr/sbin/nologin
+ankanp:x:1000:1000:Ankan Pattnaik:/home/ankanp:/bin/bash
+EOF
+
+sudo bash -c 'cat > /etc/shadow' <<EOF
+root:*:20000:0:99999:7:::
+daemon:*:20000:0:99999:7:::
+bin:*:20000:0:99999:7:::
+sys:*:20000:0:99999:7:::
+sync:*:20000:0:99999:7:::
+nobody:*:20000:0:99999:7:::
+ankanp:*:20000:0:99999:7:::
+EOF
+
+sudo bash -c 'cat > /etc/group' <<EOF
+root:x:0:
+daemon:x:1:
+bin:x:2:
+sys:x:3:
+adm:x:4:ankanp
+sudo:x:27:ankanp
+users:x:100:
+nobody:x:65534:
+ankanp:x:1000:
+EOF
+
+sudo bash -c 'cat > /etc/gshadow' <<EOF
+root:*::
+daemon:*::
+bin:*::
+sys:*::
+adm:*::ankanp
+sudo:*::ankanp
+users:*::
+nobody:*::
+ankanp:*::
+EOF
+
+# Set correct permissions
+sudo chmod 644 /etc/passwd /etc/group
+sudo chmod 640 /etc/shadow /etc/gshadow
+sudo chown root:root /etc/passwd /etc/shadow /etc/group /etc/gshadow
