@@ -1,0 +1,32 @@
+- name: Determine and validate release version
+  id: versioning
+  run: |
+    IS_PROD="${{ github.ref_name == 'prod' }}"
+    INPUT_VERSION="${{ github.event.inputs.version || '' }}"
+
+    if [[ "$IS_PROD" == "true" ]]; then
+      if [[ -n "$INPUT_VERSION" ]]; then
+        # Allow and strip 'v' prefix if present
+        VERSION="${INPUT_VERSION#v}"
+
+        # Validate SemVer: MAJOR.MINOR.PATCH
+        if [[ ! "$VERSION" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+          echo "❌ Invalid version format: $INPUT_VERSION"
+          echo "Expected format: MAJOR.MINOR.PATCH (e.g. 1.0.0 or v1.0.0)"
+          exit 1
+        fi
+
+        # Check for duplicate tag
+        if git rev-parse "v$VERSION" >/dev/null 2>&1; then
+          echo "❌ Tag v$VERSION already exists."
+          exit 1
+        fi
+      else
+        VERSION=$(date +'%Y.%m.%d')
+      fi
+    else
+      VERSION="latest"
+    fi
+
+    echo "✅ Using version: $VERSION"
+    echo "version=$VERSION" >> $GITHUB_OUTPUT
