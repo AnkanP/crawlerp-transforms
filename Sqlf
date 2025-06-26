@@ -1,0 +1,28 @@
+WITH filtered AS (
+  SELECT *
+  FROM bdc_aws.ccm_retail_cliente_segmen2
+  WHERE CAST(e0840_codpers AS BIGINT) = 3
+),
+ranked AS (
+  SELECT
+    e0840_tipopers AS customer_type,
+    CAST(e0840_codpers AS BIGINT) AS customer_number,
+    e0840_empsegm AS segmtn_entity,
+    e0840_cdsegm AS segmtn_code,
+    e0840_fecbaj AS cancel_date,
+    e0840_idemprsj AS entity_seg_code,
+    e0840_codseg AS seg_code,
+    e0840_critesgm AS segmtn_criteria,
+    e0840_fecaltsi AS reg_date,
+    e0840_feultat AS upd_date,
+    e0840_timulat AS upd_time,
+    stc AS time_stamp,
+    ROW_NUMBER() OVER (
+      PARTITION BY e0840_tipopers, e0840_codpers, e0840_cdsegm
+      ORDER BY e0840_fecbaj DESC, stc DESC
+    ) AS rn
+  FROM filtered
+)
+SELECT *
+FROM ranked
+WHERE rn = 1;
