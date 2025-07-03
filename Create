@@ -1,0 +1,62 @@
+#!/bin/bash
+
+set -euo pipefail
+
+DATABASE="$1"
+OUTPUT="$2"
+SQL_FILE="$3"
+
+if [ ! -f "$SQL_FILE" ]; then
+  echo "❌ SQL file not found: $SQL_FILE"
+  exit 1
+fi
+
+echo "✅ Running Athena queries from: $SQL_FILE"
+
+while IFS= read -r query || [[ -n "$query" ]]; do
+  [[ -z "$query" ]] && continue  # Skip blank lines
+
+  echo "▶️ Running query: $query"
+
+  exec_id=$(aws athena start-query-execution \
+    --query-string "$query" \
+    --query-execution-context Database="$DATABASE" \
+    --result-configuration OutputLocation="$OUTPUT" \
+    --output text --query 'QueryExecutionId' 2>/dev/null)
+
+  if [[ -z "$exec_id" ]]; then
+    echo "❌ Failed to start query: $query"
+    continue  # or exit 1 to fail the script
+  fi
+
+  echo "⏳ Waiting for query execution: $exec_id"
+
+  # Polling
+  max_attempts=60
+  attempt=0
+  while true; do
+    status=$(aws athena get-query-execution \
+      --query-execution-id "$exec_id" \
+      --output text --query 'QueryExecution.Status.State' 2>/dev/null)
+
+    case "$status" in
+      "SUCCEEDED")
+        echo "✅ Query succeeded: $exec_id"
+        break
+        ;;
+      "FAILED" | "CANCELLED")
+        echo "❌ Query failed or was cancelled: $exec_id"
+        break
+        ;;
+      *)
+        sleep 2
+        attempt=$((attempt + 1))
+        if (( attempt >= max_attempts )); then
+          echo "⏱️ Timeout waiting for query: $exec_id"
+          break
+        fi
+        ;;
+    esac
+  done
+
+done < "$SQL_FILE"
