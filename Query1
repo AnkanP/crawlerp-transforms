@@ -1,0 +1,47 @@
+#!/bin/bash
+
+# Check arguments
+if [ "$#" -ne 3 ]; then
+  echo "Usage: $0 <database> <s3_output_path> <sql_file>"
+  exit 1
+fi
+
+DATABASE="$1"
+OUTPUT="$2"
+SQL_FILE="$3"
+
+# Validate SQL file
+if [ ! -f "$SQL_FILE" ]; then
+  echo "SQL file not found: $SQL_FILE"
+  exit 1
+fi
+
+# Loop through each non-empty line (query) in the file
+while IFS= read -r query || [[ -n "$query" ]]; do
+  # Skip blank lines
+  [[ -z "$query" ]] && continue
+
+  echo "Running query: $query"
+  exec_id=$(aws athena start-query-execution \
+    --query-string "$query" \
+    --query-execution-context Database="$DATABASE" \
+    --result-configuration OutputLocation="$OUTPUT" \
+    --output text --query 'QueryExecutionId')
+
+  # Poll for completion
+  while true; do
+    status=$(aws athena get-query-execution \
+      --query-execution-id "$exec_id" \
+      --output text --query 'QueryExecution.Status.State')
+
+    if [[ "$status" == "SUCCEEDED" ]]; then
+      echo "✅ Query succeeded: $exec_id"
+      break
+    elif [[ "$status" == "FAILED" || "$status" == "CANCELLED" ]]; then
+      echo "❌ Query failed or cancelled: $exec_id"
+      break
+    else
+      sleep 2
+    fi
+  done
+done < "$SQL_FILE"
