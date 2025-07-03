@@ -1,0 +1,18 @@
+resource "null_resource" "run_athena_queries" {
+  provisioner "local-exec" {
+    command = "./run_athena.sh ${var.database} ${var.output_location} ${path.module}/queries.sql"
+    environment = {
+      AWS_DEFAULT_REGION = var.aws_region
+    }
+  }
+
+  # Only re-run if the hash of the SQL file changes (optional)
+  triggers = {
+    script_hash = filesha256("${path.module}/queries.sql")
+  }
+
+  # Ensures it's only created once, not on every plan
+  lifecycle {
+    create_before_destroy = false
+  }
+}
