@@ -1,0 +1,32 @@
+#!/bin/bash
+
+DATABASE="your_db"
+OUTPUT="s3://your-bucket/results/"
+
+while IFS= read -r query; do
+  [[ -z "$query" ]] && continue
+
+  echo "Running query: $query"
+  exec_id=$(aws athena start-query-execution \
+    --query-string "$query" \
+    --query-execution-context Database=$DATABASE \
+    --result-configuration OutputLocation=$OUTPUT \
+    --output text --query 'QueryExecutionId')
+
+  # Poll until it finishes
+  while true; do
+    status=$(aws athena get-query-execution \
+      --query-execution-id $exec_id \
+      --output text --query 'QueryExecution.Status.State')
+
+    if [[ "$status" == "SUCCEEDED" ]]; then
+      echo "✅ Query succeeded: $exec_id"
+      break
+    elif [[ "$status" == "FAILED" || "$status" == "CANCELLED" ]]; then
+      echo "❌ Query failed or cancelled: $exec_id"
+      break
+    else
+      sleep 2
+    fi
+  done
+done < queries.sql
