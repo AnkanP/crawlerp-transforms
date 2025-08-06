@@ -1,0 +1,32 @@
+import boto3
+
+athena = boto3.client('athena')
+
+query_execution_id = 'your-query-execution-id'
+
+results = []
+next_token = None
+
+while True:
+    if next_token:
+        response = athena.get_query_results(
+            QueryExecutionId=query_execution_id,
+            NextToken=next_token
+        )
+    else:
+        response = athena.get_query_results(
+            QueryExecutionId=query_execution_id
+        )
+
+    for row in response['ResultSet']['Rows']:
+        results.append([col.get('VarCharValue', '') for col in row['Data']])
+
+    next_token = response.get('NextToken')
+    if not next_token:
+        break
+
+# Remove header row (optional)
+results = results[1:]
+
+# Print the number of rows
+print(f"Total rows: {len(results)}")
