@@ -1,0 +1,24 @@
+import re
+
+def convert_string_move_numbers_to_end(s, case='original'):
+    # Extract all words and numbers in order
+    parts = re.findall(r'[a-zA-Z]+|\d+', s)
+
+    # Separate into words and numbers
+    words = [p for p in parts if p.isalpha()]
+    numbers = [p for p in parts if p.isdigit()]
+
+    # Apply case conversion
+    if case == 'lower':
+        words = [w.lower() for w in words]
+    elif case == 'upper':
+        words = [w.upper() for w in words]
+
+    # Combine and return
+    return '_'.join(words + numbers)
+
+# ✅ Example
+input_str = "text:123:data:456:value"
+print(convert_string_move_numbers_to_end(input_str))          # text_data_value_123_456
+print(convert_string_move_numbers_to_end(input_str, 'lower')) # text_data_value_123_456
+print(convert_string_move_numbers_to_end(input_str, 'upper')) # TEXT_DATA_VALUE_123_456
