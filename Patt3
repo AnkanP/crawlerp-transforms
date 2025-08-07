@@ -1,0 +1,28 @@
+import re
+
+def convert_string_partial_digit_move(s, case='original'):
+    tokens = re.findall(r'[a-zA-Z0-9_]+', s)
+    words = []
+    digits_to_move = []
+
+    for token in tokens:
+        # Match prefix digit with optional trailing underscore, or underscore-prefixed digits
+        match = re.search(r'(^\d+_?|_\d+_?$)', token)
+        if match:
+            # Extract the digit and clean underscore
+            digit = match.group().replace('_', '')
+            # Remove the matched digit part from the original token
+            remaining = token.replace(match.group(), '')
+            if remaining:
+                words.append(remaining)
+            digits_to_move.append(digit)
+        else:
+            words.append(token)
+
+    # Apply case transformation
+    if case == 'lower':
+        words = [w.lower() for w in words]
+    elif case == 'upper':
+        words = [w.upper() for w in words]
+
+    return '_'.join(words + digits_to_move)
