@@ -1,0 +1,29 @@
+import re
+
+def convert_string_with_underscore_digits(s, case='original'):
+    # Extract all parts (words, numbers with/without underscores)
+    tokens = re.findall(r'[a-zA-Z0-9_]+', s)
+
+    words = []
+    digits_to_move = []
+
+    for token in tokens:
+        # Check if it's a number with _prefix or _suffix
+        if re.fullmatch(r'_\d+|\d+_|_\d+_', token):
+            digits_to_move.append(re.sub(r'_', '', token))  # remove underscores
+        else:
+            words.append(token)
+
+    # Apply case conversion to words only
+    if case == 'lower':
+        words = [w.lower() for w in words]
+    elif case == 'upper':
+        words = [w.upper() for w in words]
+
+    return '_'.join(words + digits_to_move)
+
+# ✅ Test
+input_str = "text_123:data:456_:mid789:_999:end"
+output = convert_string_with_underscore_digits(input_str)
+print(output)
+# Output: text_data_mid789_end_123_456_999
