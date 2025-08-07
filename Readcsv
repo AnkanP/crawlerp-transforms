@@ -1,0 +1,11 @@
+import csv
+
+# Path to the CSV file
+csv_file_path = "pattern_dict.csv"
+
+# Read CSV and convert back to dictionary
+with open(csv_file_path, mode="r", encoding="utf-8") as file:
+    reader = csv.DictReader(file)
+    loaded_pattern_dict = {row["pattern"]: row["replacement"] for row in reader}
+
+print(loaded_pattern_dict)
