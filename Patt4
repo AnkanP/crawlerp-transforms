@@ -1,0 +1,27 @@
+import re
+
+def convert_string_partial_digit_move(s, case='original'):
+    tokens = re.findall(r'[a-zA-Z0-9_]+', s)
+    words = []
+    digits_to_move = []
+
+    for token in tokens:
+        # Process the token iteratively for multiple digit patterns
+        while True:
+            match = re.search(r'(^\d+_?|_\d+_?$)', token)
+            if match:
+                digit = match.group().replace('_', '')
+                digits_to_move.append(digit)
+                token = token.replace(match.group(), '', 1)
+            else:
+                break
+        if token:
+            words.append(token)
+
+    # Apply case formatting if needed
+    if case == 'lower':
+        words = [w.lower() for w in words]
+    elif case == 'upper':
+        words = [w.upper() for w in words]
+
+    return '_'.join(words + digits_to_move)
