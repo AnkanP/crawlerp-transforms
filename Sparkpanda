@@ -1,0 +1,25 @@
+import awswrangler as wr
+import boto3
+from pyspark.sql import SparkSession
+
+# Initialize SparkSession
+spark = SparkSession.builder \
+    .appName("AthenaToSpark") \
+    .getOrCreate()
+
+# boto3 session
+session = boto3.Session(region_name="eu-west-1")
+
+# Query Athena view into Pandas DataFrame
+df_pandas = wr.athena.read_sql_query(
+    sql="SELECT * FROM my_database.my_view LIMIT 100",
+    database="my_database",
+    boto3_session=session,
+    workgroup="primary"
+)
+
+# Convert Pandas DataFrame -> Spark DataFrame
+df_spark = spark.createDataFrame(df_pandas)
+
+# Show Spark DataFrame
+df_spark.show(5)
