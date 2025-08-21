@@ -1,0 +1,77 @@
+import sys
+import datetime
+from awsglue.utils import getResolvedOptions
+from pyspark.sql import SparkSession
+from pyspark.sql import Row
+
+# ------------------------------------------------
+# 1. Capture Glue args
+# ------------------------------------------------
+args = getResolvedOptions(sys.argv, ["JOB_NAME", "JOB_RUN_ID", "CUSTOM_RUN_ID", "RELOAD_MONTH"])
+
+glue_job_name = args["JOB_NAME"]
+glue_job_run_id = args["JOB_RUN_ID"]      # AWS generated
+custom_run_id  = args["CUSTOM_RUN_ID"]    # e.g. v1, v2, v3
+reload_month   = args["RELOAD_MONTH"]     # e.g. 2025-08
+
+# ------------------------------------------------
+# 2. Spark session & Spark App ID
+# ------------------------------------------------
+spark = (
+    SparkSession.builder
+    .appName(f"{glue_job_name}-{reload_month}-{custom_run_id}")
+    .config("spark.extra.run_id", custom_run_id)
+    .getOrCreate()
+)
+
+spark_app_id = spark.sparkContext.applicationId
+
+# ------------------------------------------------
+# 3. Write data into Iceberg table with lineage metadata
+# ------------------------------------------------
+df = spark.read.parquet("s3://my-source-data/")   # <-- replace with your source
+
+spark.conf.set("spark.sql.iceberg.write.metadata.glue_job_run_id", glue_job_run_id)
+spark.conf.set("spark.sql.iceberg.write.metadata.spark_app_id", spark_app_id)
+spark.conf.set("spark.sql.iceberg.write.metadata.custom_run_id", custom_run_id)
+spark.conf.set("spark.sql.iceberg.write.metadata.reload_month", reload_month)
+
+df.writeTo("my_catalog.mydb.mytable").overwritePartitions()
+
+# ------------------------------------------------
+# 4. Get latest snapshot id
+# ------------------------------------------------
+latest_snapshot = spark.sql(f"""
+    SELECT snapshot_id 
+    FROM my_catalog.mydb.mytable.snapshots 
+    ORDER BY committed_at DESC 
+    LIMIT 1
+""").collect()[0][0]
+
+# ------------------------------------------------
+# 5. Add a monthly reload tag
+# ------------------------------------------------
+reload_tag = f"reload_{reload_month}_v{custom_run_id}"
+
+spark.sql(f"""
+    ALTER TABLE my_catalog.mydb.mytable
+    ADD TAG {reload_tag}
+    AS OF SNAPSHOT {latest_snapshot}
+""")
+
+# ------------------------------------------------
+# 6. Append to Audit Table in S3 (Parquet)
+# ------------------------------------------------
+audit_row = [Row(
+    month=reload_month,
+    reload_version=f"v{custom_run_id}",
+    snapshot_id=str(latest_snapshot),
+    glue_job_run_id=glue_job_run_id,
+    spark_app_id=spark_app_id,
+    custom_run_id=custom_run_id,
+    timestamp=datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+)]
+
+audit_df = spark.createDataFrame(audit_row)
+
+audit_df.write.mode("append").parquet("s3://my-audit-logs/iceberg_reload_audit/")
