@@ -1,0 +1,17 @@
+-- MERGE source staging into target Iceberg table
+MERGE INTO my_catalog.db.my_table AS target
+USING staging_table AS source
+ON target.id = source.id  -- primary key or matching logic
+WHEN MATCHED THEN
+  UPDATE SET *
+WHEN NOT MATCHED THEN
+  INSERT *
+
+-- Custom snapshot summary tags for audit/versioning
+OPTIONS (
+  'write.snapshot-summary.job_run_id' = '${JOB_RUN_ID}',         -- e.g., 2025-08-21-003
+  'write.snapshot-summary.data_version' = '${DATA_VERSION}',    -- e.g., v7
+  'write.snapshot-summary.app_name' = '${APP_NAME}',            -- e.g., data-pipeline
+  'write.snapshot-summary.environment' = '${ENVIRONMENT}',      -- e.g., prod, dev
+  'write.snapshot-summary.description' = '${DESCRIPTION}'       -- optional human-readable note
+);
