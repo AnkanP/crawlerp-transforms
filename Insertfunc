@@ -1,0 +1,29 @@
+def dict_to_insert_query_with_func(table: str, data: dict, sql_funcs: list = None):
+    """
+    data: dict of column -> value
+    sql_funcs: list of column names that should use SQL functions (like CURRENT_TIMESTAMP)
+    """
+    if sql_funcs is None:
+        sql_funcs = []
+
+    columns = ", ".join(data.keys())
+    values_list = []
+    for k, v in data.items():
+        if k in sql_funcs:
+            values_list.append(v)  # Insert as-is (no quotes)
+        elif isinstance(v, str):
+            values_list.append(f"'{v}'")
+        else:
+            values_list.append(str(v))
+
+    values = ", ".join(values_list)
+    query = f"INSERT INTO {table} ({columns}) VALUES ({values});"
+    return query
+
+
+# Example usage
+data = {"id": 1, "name": "Alice", "created_at": "CURRENT_TIMESTAMP"}
+table = "users"
+
+query = dict_to_insert_query_with_func(table, data, sql_funcs=["created_at"])
+print(query)
