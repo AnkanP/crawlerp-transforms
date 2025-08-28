@@ -1,0 +1,19 @@
+import boto3
+import os
+
+s3 = boto3.client("s3")
+
+bucket = "your-bucket-name"
+prefix = "optional/prefix/"
+suffix = ".csv"
+
+resp = s3.list_objects_v2(Bucket=bucket, Prefix=prefix)
+
+filename = None
+if "Contents" in resp:
+    for obj in resp["Contents"]:
+        if obj["Key"].endswith(suffix):
+            filename = os.path.basename(obj["Key"])
+            break  # first match only
+
+print("First matching file:", filename)
