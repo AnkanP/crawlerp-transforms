@@ -1,0 +1,104 @@
+import sys
+from awsglue.utils import getResolvedOptions
+from pyspark.sql import SparkSession
+
+# -------------------
+# Glue Job Arguments
+# -------------------
+args = getResolvedOptions(sys.argv, ["JOB_NAME", "JOB_RUN_ID"])
+job_run_id = args["JOB_RUN_ID"]
+
+# -------------------
+# Spark Session Config
+# -------------------
+spark = (
+    SparkSession.builder.appName("GlueIcebergTaggingJob")
+    .config("spark.sql.catalog.glue_catalog", "org.apache.iceberg.spark.SparkCatalog")
+    .config("spark.sql.catalog.glue_catalog.warehouse", "s3://my-iceberg-warehouse/")
+    .config("spark.sql.catalog.glue_catalog.catalog-impl", "org.apache.iceberg.aws.glue.GlueCatalog")
+    .config("spark.sql.catalog.glue_catalog.io-impl", "org.apache.iceberg.aws.s3.S3FileIO")
+    .getOrCreate()
+)
+
+table_fqn = "glue_catalog.my_db.my_table"
+tracker_table_fqn = "glue_catalog.my_db.tracker_table"
+
+# -------------------
+# Step 1: Write Data
+# -------------------
+df = spark.createDataFrame(
+    [(1, "Alice"), (2, "Bob")],
+    ["id", "name"]
+)
+
+df.writeTo(table_fqn).append()
+
+# -------------------
+# Step 2: Tag Latest Snapshot
+# -------------------
+latest_snapshot = (
+    spark.sql(f"SELECT snapshot_id FROM {table_fqn}.snapshots "
+              "ORDER BY committed_at DESC LIMIT 1")
+    .collect()[0][0]
+)
+
+tag_name = f"job_{job_run_id}"
+
+spark.sql(f"""
+    ALTER TABLE {table_fqn}
+    CREATE TAG {tag_name}
+    AS OF VERSION {latest_snapshot}
+""")
+
+print(f"✅ Tagged snapshot {latest_snapshot} as {tag_name}")
+
+# -------------------
+# Step 3: Retain Only Last N Tags
+# -------------------
+N = 30  # keep only last 30 tags
+tags_df = spark.sql(f"""
+    SELECT tag_name, created_at
+    FROM {table_fqn}.tags
+    ORDER BY created_at DESC
+""")
+tags = [row.tag_name for row in tags_df.collect()]
+if len(tags) > N:
+    to_drop = tags[N:]
+    for tag in to_drop:
+        spark.sql(f"ALTER TABLE {table_fqn} DROP TAG {tag}")
+        print(f"🗑️ Dropped old tag: {tag}")
+
+# -------------------
+# Step 4: Capture Snapshot Summary
+# -------------------
+summary_row = spark.sql(f"""
+    SELECT snapshot_id, committed_at, summary
+    FROM {table_fqn}.snapshots
+    WHERE snapshot_id = {latest_snapshot}
+""").collect()[0]
+
+snapshot_id = summary_row.snapshot_id
+committed_at = summary_row.committed_at
+summary_map = summary_row.summary  # this is a Python dict (map<string,string>)
+
+# Extract individual fields safely
+operation = summary_map.get("operation", "unknown")
+added_records = int(summary_map.get("added-records", 0))
+deleted_records = int(summary_map.get("deleted-records", 0))
+total_records = int(summary_map.get("total-records", 0))
+added_files = int(summary_map.get("added-data-files", 0))
+deleted_files = int(summary_map.get("deleted-data-files", 0))
+
+# -------------------
+# Step 5: Build Tracker Record
+# -------------------
+tracker_df = spark.createDataFrame(
+    [(job_run_id, snapshot_id, committed_at, tag_name, operation,
+      added_records, deleted_records, total_records, added_files, deleted_files)],
+    ["job_run_id", "snapshot_id", "committed_at", "tag_name", "operation",
+     "added_records", "deleted_records", "total_records", "added_files", "deleted_files"]
+)
+
+tracker_df.writeTo(tracker_table_fqn).append()
+
+print(f"📌 Tracker updated for job {job_run_id}, snapshot {snapshot_id}")
