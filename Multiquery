@@ -1,0 +1,42 @@
+import boto3
+import time
+
+athena = boto3.client("athena", region_name="your-region")
+
+# Athena output location (S3)
+output_location = "s3://your-bucket/athena-results/"
+
+# Read SQL file (semicolon separated statements)
+with open("queries.sql", "r") as f:
+    sql_file = f.read()
+
+# Split into individual queries (ignore empty ones)
+queries = [q.strip() for q in sql_file.split(";") if q.strip()]
+
+def run_query(query, database):
+    response = athena.start_query_execution(
+        QueryString=query,
+        QueryExecutionContext={"Database": database},
+        ResultConfiguration={"OutputLocation": output_location}
+    )
+    return response["QueryExecutionId"]
+
+def wait_for_query(query_id):
+    while True:
+        result = athena.get_query_execution(QueryExecutionId=query_id)
+        state = result["QueryExecution"]["Status"]["State"]
+
+        if state in ["SUCCEEDED", "FAILED", "CANCELLED"]:
+            return state
+        time.sleep(2)
+
+# Run each query one by one
+database = "your_database_name"
+for query in queries:
+    print(f"Running query: {query[:60]}...")
+    qid = run_query(query, database)
+    status = wait_for_query(qid)
+    print(f"Query finished with status: {status}")
+    if status != "SUCCEEDED":
+        print(f"❌ Query failed: {query}")
+        break
