@@ -1,0 +1,41 @@
+import boto3, time, sqlparse
+
+athena = boto3.client("athena", region_name="us-east-1")
+
+DATABASE = "mydb"
+OUTPUT = "s3://my-athena-query-results-bucket/results/"
+WORKGROUP = "primary"
+
+with open("queries.sql") as f:
+    sql_text = f.read()
+
+# Split queries safely (handles multi-line SQL)
+queries = [q.strip() for q in sqlparse.split(sql_text) if q.strip()]
+
+for query in queries:
+    print(f"▶️ Running: {query}")
+    response = athena.start_query_execution(
+        QueryString=query,
+        QueryExecutionContext={"Database": DATABASE},
+        ResultConfiguration={"OutputLocation": OUTPUT},
+        WorkGroup=WORKGROUP
+    )
+
+    qid = response["QueryExecutionId"]
+    print(f"Started execution: {qid}")
+
+    # Poll for max 60 seconds
+    start_time = time.time()
+    while True:
+        status = athena.get_query_execution(QueryExecutionId=qid)["QueryExecution"]["Status"]["State"]
+
+        if status in ["SUCCEEDED", "FAILED", "CANCELLED"]:
+            print(f"Query {qid} finished with status: {status}")
+            if status != "SUCCEEDED":
+                raise Exception(f"❌ Query failed: {query}")
+            break
+
+        if time.time() - start_time > 60:  # 1 min timeout
+            raise TimeoutError(f"⏳ Query {qid} did not complete within 1 minute")
+
+        time.sleep(3)
