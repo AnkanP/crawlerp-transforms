@@ -1,0 +1,52 @@
+name: Run Athena Queries
+
+on:
+  workflow_dispatch:
+
+jobs:
+  athena:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Run Athena Queries from File
+        run: |
+          OUTPUT="s3://my-athena-query-results-bucket/results/"
+          DATABASE="mydb"
+          WORKGROUP="primary"
+
+          # Split file by ';' (excluding empty lines)
+          queries=$(awk -v RS=';' '{gsub(/\n/," "); if (NF) print $0}' queries.sql)
+
+          for query in "$queries"; do
+            echo "Running query: $query"
+            qid=$(aws athena start-query-execution \
+              --query-string "$query" \
+              --query-execution-context Database=$DATABASE \
+              --result-configuration OutputLocation=$OUTPUT \
+              --work-group $WORKGROUP \
+              --query 'QueryExecutionId' --output text)
+
+            echo "Started query with ExecutionId: $qid"
+
+            # Wait until it finishes
+            while true; do
+              status=$(aws athena get-query-execution --query-execution-id $qid \
+                --query 'QueryExecution.Status.State' --output text)
+              if [[ "$status" == "SUCCEEDED" ]]; then
+                echo "✅ Query succeeded"
+                break
+              elif [[ "$status" == "FAILED" || "$status" == "CANCELLED" ]]; then
+                echo "❌ Query failed with status $status"
+                exit 1
+              fi
+              sleep 3
+            done
+          done
