@@ -1,0 +1,28 @@
+variable "force_rebuild" {
+  type    = bool
+  default = false
+}
+
+# Dummy resource to trigger rebuilds
+resource "null_resource" "force_rebuild" {
+  count = var.force_rebuild ? 1 : 0
+
+  triggers = {
+    always = timestamp()
+  }
+}
+
+module "lambda" {
+  source  = "terraform-aws-modules/lambda/aws"
+
+  function_name  = "my-function"
+  handler        = "index.handler"
+  runtime        = "python3.11"
+
+  create_package = true
+  source_path    = "${path.module}/src"
+  publish        = true
+
+  # 👇 Only depends if force_rebuild = true
+  depends_on = [for r in null_resource.force_rebuild : r]
+}
