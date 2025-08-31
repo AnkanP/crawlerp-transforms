@@ -1,0 +1,16 @@
+template = """
+Name: {name}
+Age: {age}
+Country: {country}
+---------------------
+"""
+
+data = [
+    {"name": "Alice", "age": 25, "country": "UK"},
+    {"name": "Bob", "age": 30, "country": "USA"},
+    {"name": "Charlie", "age": 28, "country": "India"},
+]
+
+result = "".join(template.format(**row) for row in data)
+
+print(result)
