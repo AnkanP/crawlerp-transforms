@@ -1,0 +1,56 @@
+import xml.etree.ElementTree as ET
+
+xml_string = """
+<root>
+    <person>
+        <name>John</name>
+        <address>
+            <city>New York</city>
+            <zip>10001</zip>
+        </address>
+    </person>
+    <person>
+        <name>Jane</name>
+        <address>
+            <city>Los Angeles</city>
+            <zip>90001</zip>
+        </address>
+    </person>
+</root>
+"""
+
+tree = ET.ElementTree(ET.fromstring(xml_string))
+root = tree.getroot()
+
+def print_paths(element, path=""):
+    # Count siblings of same tag
+    parent = element.getparent() if hasattr(element, "getparent") else None
+    if parent is not None:
+        siblings = [e for e in parent if e.tag == element.tag]
+        if len(siblings) > 1:
+            index = siblings.index(element) + 1  # XPath is 1-based
+            current_path = f"{path}/{element.tag}[{index}]"
+        else:
+            current_path = f"{path}/{element.tag}"
+    else:
+        current_path = f"{path}/{element.tag}"
+
+    print(current_path)
+
+    # Recurse children
+    for child in element:
+        print_paths(child, current_path)
+
+# Monkeypatch to add parent references (since ElementTree doesn’t store them)
+def add_parents(elem, parent=None):
+    elem._parent = parent
+    for child in elem:
+        add_parents(child, elem)
+
+def getparent(self):
+    return getattr(self, "_parent", None)
+
+ET.Element.getparent = getparent
+add_parents(root)
+
+print_paths(root)
