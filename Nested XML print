@@ -1,0 +1,51 @@
+import xml.etree.ElementTree as ET
+
+xml_string = """
+<root>
+    <element>one</element>
+    <element>two</element>
+    <group>
+        <element>three</element>
+        <element>four</element>
+        <nested>
+            <element>five</element>
+        </nested>
+    </group>
+    <group>
+        <nested>
+            <element>six</element>
+            <element>seven</element>
+        </nested>
+    </group>
+</root>
+"""
+
+tree = ET.ElementTree(ET.fromstring(xml_string))
+root = tree.getroot()
+
+def walk(element, path="/", tag="element", counters=None):
+    if counters is None:
+        counters = {}
+
+    # Build current path
+    current_path = f"{path}{element.tag}"
+
+    # Track occurrences of the specific tag
+    if element.tag == tag:
+        counters[path] = counters.get(path, 0) + 1
+        occurrence = counters[path]
+        current_path = f"{path}{element.tag}[{occurrence}]"
+
+    # Print path and value
+    text_val = (element.text or "").strip()
+    if text_val:
+        print(f"{current_path} = {text_val}")
+    else:
+        print(current_path)
+
+    # Recurse children
+    for child in element:
+        walk(child, current_path + "/", tag, counters.copy())  # pass a copy per branch
+
+# Run traversal
+walk(root)
