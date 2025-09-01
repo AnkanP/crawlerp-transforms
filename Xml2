@@ -1,0 +1,79 @@
+import xml.etree.ElementTree as ET
+
+xml_string = """
+<root>
+    <person>
+        <name>John</name>
+        <datatype>string</datatype>
+        <address>
+            <city>New York</city>
+            <zip>10001</zip>
+            <datatype>int</datatype>
+        </address>
+    </person>
+    <person>
+        <name>Jane</name>
+        <address>
+            <city>Los Angeles</city>
+            <zip>90001</zip>
+        </address>
+    </person>
+</root>
+"""
+
+tree = ET.ElementTree(ET.fromstring(xml_string))
+root = tree.getroot()
+
+def print_paths(element, path=""):
+    # Skip <datatype> elements
+    if element.tag == "datatype":
+        return
+
+    # Count siblings with the same tag under the current parent path
+    if path:
+        parent_path = path
+    else:
+        parent_path = ""
+
+    # Figure out index of this element among its siblings
+    if parent_path:
+        siblings = [e for e in list(element.getparent()) if e.tag == element.tag] \
+            if hasattr(element, "getparent") else None
+    else:
+        siblings = None
+
+    # XPath-style index handling
+    if element is not root:
+        parent = element.getparent() if hasattr(element, "getparent") else None
+        if parent is not None:
+            same_tag_siblings = [e for e in parent if e.tag == element.tag]
+            if len(same_tag_siblings) > 1:
+                index = same_tag_siblings.index(element) + 1
+                current_path = f"{path}/{element.tag}[{index}]"
+            else:
+                current_path = f"{path}/{element.tag}"
+        else:
+            current_path = f"/{element.tag}"
+    else:
+        current_path = f"/{element.tag}"
+
+    # Print path and value (if text exists)
+    text_val = (element.text or "").strip()
+    if text_val:
+        print(f"{current_path} = {text_val}")
+    else:
+        print(current_path)
+
+    # Track child tag counts to assign indexes
+    tag_count = {}
+    for child in element:
+        if child.tag == "datatype":
+            continue  # skip unwanted tags
+        tag_count[child.tag] = tag_count.get(child.tag, 0) + 1
+        if list(element).count(child) > 1:
+            child_path = f"{current_path}/{child.tag}[{tag_count[child.tag]}]"
+        else:
+            child_path = f"{current_path}/{child.tag}"
+        print_paths(child, current_path)
+
+print_paths(root)
