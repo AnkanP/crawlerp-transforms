@@ -1,0 +1,15 @@
+import re
+
+def replace_with_increment(text, target, replacement):
+    counter = 0
+    def replacer(match):
+        nonlocal counter
+        counter += 1
+        return f"{replacement}{counter}"
+    
+    return re.sub(re.escape(target), replacer, text)
+
+# Example
+s = "element element element"
+result = replace_with_increment(s, "element", "new")
+print(result)
