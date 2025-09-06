@@ -1,0 +1,8 @@
+CREATE TABLE view_metadata (
+    view_name      STRING,
+    base_table     STRING,
+    select_columns STRING,   -- e.g. "id, name, amount"
+    filters        STRING,   -- e.g. "amount > 100"
+    joins          STRING,   -- e.g. "JOIN dim_users u ON t.user_id = u.id"
+    extra_options  STRING    -- optional (partitioning, etc.)
+);
