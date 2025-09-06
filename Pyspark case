@@ -1,0 +1,36 @@
+from pyspark.sql import DataFrame
+from pyspark.sql.functions import when, col
+
+def add_case_column(
+    df: DataFrame,
+    base_col: str,
+    new_col: str,
+    mapping: dict,
+    default_val: str = "Other"
+) -> DataFrame:
+    """
+    Adds a new column to the DataFrame based on CASE WHEN logic,
+    only if the base_col exists in the DataFrame.
+    
+    :param df: Input DataFrame
+    :param base_col: Column to evaluate
+    :param new_col: New column to create
+    :param mapping: Dictionary of {condition_value: result_value}
+    :param default_val: Default value for ELSE condition
+    :return: DataFrame with new column (if base_col exists)
+    """
+    if base_col not in df.columns:
+        print(f"⚠️ Column '{base_col}' not found, skipping transformation.")
+        return df
+
+    # Build the when/otherwise chain
+    case_expr = None
+    for cond_val, result_val in mapping.items():
+        if case_expr is None:
+            case_expr = when(col(base_col) == cond_val, result_val)
+        else:
+            case_expr = case_expr.when(col(base_col) == cond_val, result_val)
+
+    case_expr = case_expr.otherwise(default_val)
+
+    return df.withColumn(new_col, case_expr)
