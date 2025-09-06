@@ -1,0 +1,29 @@
+import boto3
+import pandas as pd
+import awswrangler as wr
+from jinja2 import Template
+
+# Read metadata
+metadata = wr.athena.read_sql_query("SELECT * FROM view_metadata", database="control_db")
+
+# SQL template
+sql_template = Template("""
+CREATE OR REPLACE VIEW {{ view_name }} AS
+SELECT {{ select_columns }}
+FROM {{ base_table }} t
+{% if joins %} {{ joins }} {% endif %}
+{% if filters %} WHERE {{ filters }} {% endif %};
+""")
+
+athena = boto3.client("athena")
+
+for _, row in metadata.iterrows():
+    sql = sql_template.render(
+        view_name=row["view_name"],
+        base_table=row["base_table"],
+        select_columns=row["select_columns"],
+        joins=row.get("joins"),
+        filters=row.get("filters")
+    )
+    # Execute in Athena
+    wr.athena.start_query_execution(sql=sql, database="target_db", output="s3://query-results/")
