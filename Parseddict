@@ -1,0 +1,21 @@
+def parse_to_dict(s: str) -> dict:
+    # Remove surrounding braces if present
+    s = s.strip("{}").strip()
+    if not s:
+        return {}
+
+    # Split into key=value pairs
+    pairs = [item.strip() for item in s.split(",")]
+
+    # Split each pair into key/value
+    result = {}
+    for pair in pairs:
+        if "=" in pair:
+            key, value = pair.split("=", 1)
+            result[key.strip()] = value.strip()
+    return result
+
+
+# Example
+s = "{name=ankan, country=uk, role=developer}"
+print(parse_to_dict(s))
