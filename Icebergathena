@@ -1,0 +1,68 @@
+import awswrangler as wr
+import pandas as pd
+from datetime import datetime
+
+# Athena settings
+DATABASE = "my_db"
+TABLE = "my_table"
+CATALOG = "my_catalog"
+WORKGROUP = "primary"  # optional, set your Athena workgroup
+
+# Step 1: Query latest snapshot with dynamic summary map
+query = f"""
+WITH latest_snapshot AS (
+    SELECT *
+    FROM "{CATALOG}"."{DATABASE}"."{TABLE}$snapshots"
+    ORDER BY committed_at DESC
+    LIMIT 1
+),
+tags_on_latest AS (
+    SELECT ref_name AS tag_name, snapshot_id
+    FROM "{CATALOG}"."{DATABASE}"."{TABLE}$refs"
+    WHERE type = 'tag'
+),
+summary_exploded AS (
+    SELECT
+        ls.snapshot_id,
+        ls.committed_at,
+        k AS summary_key,
+        v AS summary_value
+    FROM latest_snapshot ls
+    CROSS JOIN UNNEST(ls.summary) AS t(k, v)
+)
+SELECT
+    se.snapshot_id,
+    se.committed_at,
+    t.tag_name,
+    map_agg(se.summary_key, se.summary_value) AS summary_map
+FROM summary_exploded se
+LEFT JOIN tags_on_latest t
+    ON se.snapshot_id = t.snapshot_id
+GROUP BY se.snapshot_id, se.committed_at, t.tag_name;
+"""
+
+# Step 2: Execute query via AWS Wrangler
+df = wr.athena.read_sql_query(sql=query, database=DATABASE, ctas_approach=False, workgroup=WORKGROUP)
+
+# Step 3: Convert to Python dictionary with type handling
+def clean_snapshot_row(row):
+    result = {
+        "snapshot_id": row["snapshot_id"],
+        "committed_at": pd.to_datetime(row["committed_at"]),  # convert timestamp
+        "tag_name": row["tag_name"]
+    }
+    
+    # Merge and clean summary map
+    summary_map = row["summary_map"] or {}
+    for k, v in summary_map.items():
+        # Convert numeric strings to int if possible
+        if v is not None and v.isdigit():
+            result[k] = int(v)
+        else:
+            result[k] = v
+    return result
+
+# Apply to first row (latest snapshot)
+if not df.empty:
+    snapshot_dict = clean_snapshot_row(df.iloc[0])
+    print(snapshot_dict)
