@@ -1,0 +1,23 @@
+import boto3
+import json
+
+# Create a Step Functions client
+client = boto3.client('stepfunctions', region_name='us-east-1')
+
+# ARN of your Step Function state machine
+state_machine_arn = "arn:aws:states:us-east-1:123456789012:stateMachine:MyStateMachine"
+
+# Input payload (must be JSON serializable)
+input_payload = {
+    "customerId": "CUST12345",
+    "orderId": "ORD98765"
+}
+
+# Trigger the Step Function
+response = client.start_execution(
+    stateMachineArn=state_machine_arn,
+    name="Execution-" + "ORD98765",  # Optional, must be unique per state machine per 90 days
+    input=json.dumps(input_payload)
+)
+
+print("Execution ARN:", response["executionArn"])
