@@ -1,0 +1,19 @@
+CREATE OR REPLACE VIEW customer_data_exploded AS
+SELECT
+    cd.id,
+    cd.event_date,
+    cd.status,
+    kv.json_field,   -- which JSON column it came from
+    kv.key,
+    kv.value
+FROM customer_data cd
+CROSS JOIN UNNEST(
+    ARRAY[
+        ROW('attributes', CAST(json_parse(cd.attributes) AS map<varchar, varchar>)),
+        ROW('preferences', CAST(json_parse(cd.preferences) AS map<varchar, varchar>)),
+        ROW('metadata', CAST(json_parse(cd.metadata) AS map<varchar, varchar>))
+    ]
+) AS t(json_field, json_map)
+CROSS JOIN UNNEST(map_entries(json_map)) AS u(kv)
+WHERE cd.status = 'ACTIVE'
+  AND cd.event_date >= DATE '2025-01-01';
