@@ -1,0 +1,15 @@
+WITH sample AS (
+    SELECT * FROM (VALUES
+        (1, '{"customer":"C001","amount":100,"details":{"status":"ACTIVE","country":"UK"}}'),
+        (2, '{"customer":"C002","amount":200,"details":{"status":"INACTIVE","country":"US"}}'),
+        (3, '{"customer":"C003","amount":300,"details":{"status":"ACTIVE","country":"IN"}}')
+    ) AS t (id, payload)
+)
+SELECT
+    id,
+    -- parse string into JSON and extract fields
+    json_extract_scalar(json_parse(payload), '$.customer')       AS customer,
+    json_extract_scalar(json_parse(payload), '$.amount')         AS amount,
+    json_extract_scalar(json_parse(payload), '$.details.status') AS status,
+    json_extract_scalar(json_parse(payload), '$.details.country')AS country
+FROM sample;
