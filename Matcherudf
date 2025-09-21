@@ -1,0 +1,36 @@
+import re
+from pyspark.sql.types import StructType, StructField, StringType, IntegerType
+from pyspark.sql.functions import udf, col
+
+# Define schema for struct
+schema = StructType([
+    StructField("matched_flag", IntegerType(), True),
+    StructField("business_key", StringType(), True),
+    StructField("newjsonpath", StringType(), True),
+    StructField("description", StringType(), True),
+])
+
+# Build matcher using pandas DataFrame rules
+def build_match_udf(config_rules):
+    def match_and_enrich(jsonkey, jsonpath):
+        for key_pattern, biz, newpath, desc in config_rules:
+            if re.match(key_pattern, jsonkey) and re.match(newpath, jsonpath):
+                return (1, biz, newpath, desc)
+        return (0, None, None, None)
+    return udf(match_and_enrich, schema)
+
+# Example main DataFrame
+data = [("k1", "/old/path1"), ("k2", "/old/path2"), ("k3", "/old/path3")]
+df = spark.createDataFrame(data, ["jsonkey", "jsonpath"])
+
+# Create UDF
+match_udf = build_match_udf(config_rules)
+
+# Apply
+final_df = (
+    df.withColumn("match", match_udf(col("jsonkey"), col("jsonpath")))
+      .select("*", "match.*")
+      .drop("match")
+)
+
+final_df.show(truncate=False)
