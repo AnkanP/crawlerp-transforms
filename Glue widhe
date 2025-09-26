@@ -100,13 +100,14 @@
       }
     }
   ],
-  "variables": {
-    "JobName": {
+  "variables": [
+    {
+      "id": "var1",
       "type": "property",
       "label": "Glue Job Name",
       "default": "my-glue-job",
       "property": "JobName",
       "namespace": "AWS/Glue"
     }
-  }
+  ]
 }
