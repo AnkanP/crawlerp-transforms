@@ -1,0 +1,103 @@
+{
+  "widgets": [
+    {
+      "type": "metric",
+      "x": 0,
+      "y": 0,
+      "width": 12,
+      "height": 6,
+      "properties": {
+        "title": "Glue Job CPU vs Run Time",
+        "view": "timeSeries",
+        "region": "eu-west-2",
+        "stat": "Sum",
+        "metrics": [
+          ["AWS/Glue", "JobExecutorCpuTime", "JobName", "my-glue-job"],
+          ["AWS/Glue", "JobExecutorRunTime", "JobName", "my-glue-job"]
+        ]
+      }
+    },
+    {
+      "type": "metric",
+      "x": 12,
+      "y": 0,
+      "width": 12,
+      "height": 6,
+      "properties": {
+        "title": "Glue Executor Memory (MB)",
+        "view": "timeSeries",
+        "region": "eu-west-2",
+        "stat": "Maximum",
+        "metrics": [
+          ["AWS/Glue", "JobExecutorMemoryUsedMB", "JobName", "my-glue-job"]
+        ]
+      }
+    },
+    {
+      "type": "metric",
+      "x": 0,
+      "y": 6,
+      "width": 12,
+      "height": 6,
+      "properties": {
+        "title": "Glue Disk Spill (Bytes)",
+        "view": "timeSeries",
+        "region": "eu-west-2",
+        "stat": "Sum",
+        "metrics": [
+          ["AWS/Glue", "JobExecutorDiskBytesSpilled", "JobName", "my-glue-job"]
+        ]
+      }
+    },
+    {
+      "type": "metric",
+      "x": 12,
+      "y": 6,
+      "width": 12,
+      "height": 6,
+      "properties": {
+        "title": "Glue S3 Reads (Bytes vs IO Requests)",
+        "view": "timeSeries",
+        "region": "eu-west-2",
+        "stat": "Sum",
+        "metrics": [
+          ["AWS/Glue", "JobExecutorReadBytes", "JobName", "my-glue-job"],
+          ["AWS/Glue", "JobExecutorReadIO", "JobName", "my-glue-job"]
+        ]
+      }
+    },
+    {
+      "type": "metric",
+      "x": 0,
+      "y": 12,
+      "width": 12,
+      "height": 6,
+      "properties": {
+        "title": "Glue S3 Writes (Bytes vs IO Requests)",
+        "view": "timeSeries",
+        "region": "eu-west-2",
+        "stat": "Sum",
+        "metrics": [
+          ["AWS/Glue", "JobExecutorWriteBytes", "JobName", "my-glue-job"],
+          ["AWS/Glue", "JobExecutorWriteIO", "JobName", "my-glue-job"]
+        ]
+      }
+    },
+    {
+      "type": "metric",
+      "x": 12,
+      "y": 12,
+      "width": 12,
+      "height": 6,
+      "properties": {
+        "title": "Glue Job Runtime",
+        "view": "timeSeries",
+        "region": "eu-west-2",
+        "stat": "Sum",
+        "metrics": [
+          ["AWS/Glue", "JobRunTime", "JobName", "my-glue-job"]
+        ]
+      }
+    }
+  ]
+}
