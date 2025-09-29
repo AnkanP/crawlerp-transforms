@@ -1,0 +1,42 @@
+from awsglue.context import GlueContext
+from awsglue.dynamicframe import DynamicFrame
+from awsglue.job import Job
+from pyspark.context import SparkContext
+
+sc = SparkContext.getOrCreate()
+glueContext = GlueContext(sc)
+spark = glueContext.spark_session
+
+job = Job(glueContext)
+job.init("write_to_catalog_fgac", {})
+
+# --- your Spark DataFrame ---
+# df = <build your dataframe here>
+
+# Convert to DynamicFrame
+dyf = DynamicFrame.fromDF(df, glueContext, "dyf")
+
+# Target catalog objects
+catalog_database = "my_db"
+catalog_table    = "my_table"
+partition_keys   = ["dt"]                 # adjust or use [] if unpartitioned
+target_path      = "s3://my-bucket/my/prefix/"  # must match the table's storage location or desired managed path
+
+sink = glueContext.getSink(
+    connection_type="s3",
+    path=target_path,
+    enableUpdateCatalog=True,             # <- updates Glue Data Catalog partitions
+    updateBehavior="UPDATE_IN_DATABASE",  # <- upserts/updates partition metadata
+    partitionKeys=partition_keys,
+    compression="snappy",
+    format="glueparquet"                  # or "glueorc", etc.
+)
+
+# Tell the sink which catalog table to update
+sink.setCatalogInfo(catalogDatabase=catalog_database, catalogTableName=catalog_table)
+sink.setFormat("glueparquet")             # required; matches `format` above
+
+# Write the DynamicFrame
+sink.writeFrame(dyf)
+
+job.commit()
