@@ -1,0 +1,20 @@
+import awswrangler as wr
+import pandas as pd
+
+# Sample DataFrame
+df = pd.DataFrame({
+    "id": [1, 2, 3],
+    "amount": [100.5, 200.75, 300.1]
+})
+
+# Write with SSE-KMS encryption
+wr.s3.to_parquet(
+    df=df,
+    path="s3://my-secure-bucket/transactions/",
+    dataset=True,
+    mode="overwrite",
+    s3_additional_kwargs={
+        "ServerSideEncryption": "aws:kms",
+        "SSEKMSKeyId": "arn:aws:kms:eu-west-2:111122223333:key/abcd-1234-efgh-5678"  # <-- KMS Key ARN
+    }
+)
