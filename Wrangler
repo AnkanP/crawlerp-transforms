@@ -1,0 +1,26 @@
+import awswrangler as wr
+
+# Athena context
+database = "your_source_database"
+table = "your_source_table"
+
+# Step 1: Run query with CTAS to avoid local memory blowup
+df = wr.athena.read_sql_query(
+    sql=f"SELECT * FROM {table}",
+    database=database,
+    ctas_approach=True,
+    unload=True,
+    s3_output="s3://your-temp-bucket/athena-tmp/"  # Athena CTAS staging output
+)
+
+# Step 2: Persist result as Parquet dataset in your S3 data lake
+wr.s3.to_parquet(
+    df=df,
+    path="s3://your-target-bucket/final-dataset/",
+    dataset=True,
+    mode="overwrite",
+    database="your_target_database",   # Glue Catalog database
+    table="your_parquet_table",        # Glue Catalog table name
+    description="Parquet version of Athena table",
+    schema_evolution=True              # allow future schema changes
+)
