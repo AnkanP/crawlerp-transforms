@@ -1,0 +1,44 @@
+import awswrangler as wr
+import pandas as pd
+from awswrangler.exceptions import EmptyDataFrame
+
+def safe_athena_read(sql: str, database: str, s3_output: str, unload: bool = False) -> pd.DataFrame:
+    """
+    Executes Athena query via AWS Wrangler.
+    - Returns empty DataFrame if query returns 0 rows.
+    - Raises exception if Athena query fails for any other reason.
+    """
+    try:
+        if unload:
+            # Using UNLOAD (recommended for large datasets)
+            df = wr.athena.unload(
+                sql=sql,
+                database=database,
+                path=s3_output,
+                format="PARQUET",
+                keep_files=False
+            )
+        else:
+            # Using standard query (CTAS approach disabled for consistency)
+            df = wr.athena.read_sql_query(
+                sql=sql,
+                database=database,
+                ctas_approach=False,
+                s3_output=s3_output
+            )
+
+        # ✅ Handle empty result gracefully
+        if df is None or (isinstance(df, pd.DataFrame) and df.empty):
+            print(f"⚠️  Query returned 0 rows: {sql}")
+            return pd.DataFrame()
+        else:
+            return df
+
+    except EmptyDataFrame:
+        print(f"⚠️  No rows returned from Athena query: {sql}")
+        return pd.DataFrame()
+
+    except Exception as e:
+        # ❌ Fail job for genuine query/runtime issues
+        print(f"❌ Athena query failed: {sql}")
+        raise  # propagate exception to fail the job
