@@ -1,0 +1,22 @@
+import awswrangler as wr
+import boto3
+from urllib.parse import urlparse
+
+def ensure_s3_folder(path: str):
+    if not path.endswith("/"):
+        path += "/"
+    parsed = urlparse(path)
+    boto3.client("s3").put_object(Bucket=parsed.netloc, Key=parsed.path.lstrip("/"))
+
+# Create folder first
+output_path = "s3://my-bucket/my-folder/subfolder/unload_output/"
+ensure_s3_folder(output_path)
+
+# Run Athena UNLOAD
+df = wr.athena.read_sql_query(
+    sql="SELECT * FROM my_table",
+    database="my_db",
+    unload=True,
+    s3_output=output_path,
+    keep_files=False
+)
