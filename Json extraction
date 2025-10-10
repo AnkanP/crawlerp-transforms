@@ -1,0 +1,7 @@
+def extract_json_fields(df, json_col, config_df):
+    from pyspark.sql.functions import get_json_object, col
+    for row in config_df.collect():
+        df = df.withColumn(row["target_column"], get_json_object(col(json_col), row["json_path"]))
+    return df
+
+df_final = extract_json_fields(df_input, "payload", df_config)
