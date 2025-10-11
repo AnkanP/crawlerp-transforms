@@ -1,0 +1,32 @@
+from pyspark.sql.functions import get_json_object, from_json, col, explode, array_distinct, collect_list
+from pyspark.sql.types import ArrayType, StringType
+import json
+
+def extract_json_fields(df, json_col, config_df):
+    """
+    Dynamically extract scalar, nested, and array fields from a JSON column
+    based on config table.
+    """
+    config_list = [r.asDict() for r in config_df.collect()]
+    df_out = df
+
+    for row in config_list:
+        path = row["json_path"]
+        target_col = row["target_column"]
+        mode = row.get("extract_mode", "scalar")
+
+        # --- Case 1: simple scalar or nested ---
+        if mode == "scalar":
+            df_out = df_out.withColumn(target_col, get_json_object(col(json_col), path))
+
+        # --- Case 2: arrays (e.g., $.addresses[*].city) ---
+        elif mode == "array":
+            # We extract full array as JSON string then parse into array of strings
+            array_path = path.replace("[*]", "")  # e.g. $.addresses.city
+            temp_col = f"_tmp_{target_col}"
+            df_out = df_out.withColumn(temp_col, get_json_object(col(json_col), array_path))
+
+            # Convert the extracted JSON array string into Spark ArrayType
+            df_out = df_out.withColumn(target_col, from_json(col(temp_col), ArrayType(StringType()))).drop(temp_col)
+
+    return df_out
