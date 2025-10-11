@@ -1,0 +1,96 @@
+#!/bin/bash
+set -euo pipefail
+
+# -------------------------------
+# 🧠 Usage:
+# ./trigger_step_function.sh \
+#   --state-machine MyStateMachine \
+#   --region eu-west-1 \
+#   --account-id 123456789012 \
+#   --env dev \
+#   --bucket my-bucket
+# -------------------------------
+
+# --- Default values ---
+REGION="eu-west-1"
+ENV="dev"
+BUCKET="my-bucket"
+ACCOUNT_ID=""
+STATE_MACHINE=""
+EXECUTION_NAME=""
+RUN_ID=$(date +%s)
+TODAY=$(date +%F)
+
+# --- Parse CLI arguments ---
+while [[ "$#" -gt 0 ]]; do
+  case $1 in
+    --region) REGION="$2"; shift ;;
+    --account-id) ACCOUNT_ID="$2"; shift ;;
+    --state-machine) STATE_MACHINE="$2"; shift ;;
+    --env) ENV="$2"; shift ;;
+    --bucket) BUCKET="$2"; shift ;;
+    --name) EXECUTION_NAME="$2"; shift ;;
+    *) echo "Unknown parameter passed: $1"; exit 1 ;;
+  esac
+  shift
+done
+
+if [[ -z "$STATE_MACHINE" || -z "$ACCOUNT_ID" ]]; then
+  echo "❌ Error: Missing required parameters --state-machine or --account-id"
+  exit 1
+fi
+
+# --- Generate derived values ---
+INPUT_PATH="s3://${BUCKET}/input/date=${TODAY}/"
+OUTPUT_PATH="s3://${BUCKET}/output/date=${TODAY}/"
+EXECUTION_NAME=${EXECUTION_NAME:-"${STATE_MACHINE}-${RUN_ID}"}
+
+# --- Build JSON payload using jq ---
+PAYLOAD=$(jq -n \
+  --arg runId "$RUN_ID" \
+  --arg env "$ENV" \
+  --arg inputPath "$INPUT_PATH" \
+  --arg outputPath "$OUTPUT_PATH" \
+  --arg executionName "$EXECUTION_NAME" \
+  '{
+    meta: {
+      runId: $runId,
+      env: $env,
+      executionName: $executionName
+    },
+    s3: {
+      input: $inputPath,
+      output: $outputPath
+    }
+  }')
+
+# --- Print payload (for logging/debug) ---
+echo "---------------------------------------------"
+echo "✅ Starting Step Function Execution"
+echo "State Machine : $STATE_MACHINE"
+echo "Region         : $REGION"
+echo "Execution Name : $EXECUTION_NAME"
+echo "Payload:"
+echo "$PAYLOAD" | jq '.'
+echo "---------------------------------------------"
+
+# --- Start Step Function Execution ---
+EXECUTION_ARN=$(aws stepfunctions start-execution \
+  --region "$REGION" \
+  --state-machine-arn "arn:aws:states:${REGION}:${ACCOUNT_ID}:stateMachine:${STATE_MACHINE}" \
+  --name "$EXECUTION_NAME" \
+  --input "$PAYLOAD" \
+  --query 'executionArn' \
+  --output text)
+
+echo "🚀 Execution started successfully!"
+echo "🔗 Execution ARN: $EXECUTION_ARN"
+
+# --- Optional: describe execution ---
+echo "---------------------------------------------"
+echo "Fetching current execution status..."
+aws stepfunctions describe-execution \
+  --region "$REGION" \
+  --execution-arn "$EXECUTION_ARN" \
+  --query '{status: status, startDate: startDate}' \
+  --output table
