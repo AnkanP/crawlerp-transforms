@@ -1,0 +1,100 @@
+#!/usr/bin/env python3
+import argparse
+import boto3
+import json
+import datetime
+import sys
+from botocore.exceptions import ClientError
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description="Trigger an AWS Step Function with dynamic JSON payload."
+    )
+    parser.add_argument("--state-machine", required=True, help="Step Function name (not ARN)")
+    parser.add_argument("--account-id", required=True, help="AWS Account ID")
+    parser.add_argument("--region", default="eu-west-1", help="AWS region")
+    parser.add_argument("--env", default="dev", help="Environment (e.g., dev, prod)")
+    parser.add_argument("--bucket", default="my-bucket", help="Base S3 bucket name")
+    parser.add_argument("--name", help="Custom execution name (optional)")
+    parser.add_argument("--wait", action="store_true", help="Wait for completion and print final output")
+    return parser.parse_args()
+
+
+def build_payload(run_id, env, input_path, output_path, execution_name):
+    """Constructs dynamic JSON payload."""
+    return {
+        "meta": {
+            "runId": run_id,
+            "env": env,
+            "executionName": execution_name
+        },
+        "s3": {
+            "input": input_path,
+            "output": output_path
+        }
+    }
+
+
+def main():
+    args = parse_args()
+
+    # Initialize
+    session = boto3.Session(region_name=args.region)
+    sfn = session.client("stepfunctions")
+
+    run_id = str(int(datetime.datetime.now().timestamp()))
+    today = datetime.date.today().isoformat()
+
+    input_path = f"s3://{args.bucket}/input/date={today}/"
+    output_path = f"s3://{args.bucket}/output/date={today}/"
+    execution_name = args.name or f"{args.state_machine}-{run_id}"
+
+    payload = build_payload(run_id, args.env, input_path, output_path, execution_name)
+    payload_json = json.dumps(payload, indent=2)
+
+    state_machine_arn = (
+        f"arn:aws:states:{args.region}:{args.account_id}:stateMachine:{args.state_machine}"
+    )
+
+    print("-----------------------------------------------------------")
+    print("✅ Starting Step Function Execution")
+    print(f"State Machine : {args.state_machine}")
+    print(f"Region         : {args.region}")
+    print(f"Execution Name : {execution_name}")
+    print(f"Payload:\n{payload_json}")
+    print("-----------------------------------------------------------")
+
+    try:
+        response = sfn.start_execution(
+            stateMachineArn=state_machine_arn,
+            name=execution_name,
+            input=json.dumps(payload)
+        )
+        execution_arn = response["executionArn"]
+        print("🚀 Execution started successfully!")
+        print(f"🔗 Execution ARN: {execution_arn}")
+    except ClientError as e:
+        print(f"❌ Failed to start execution: {e}")
+        sys.exit(1)
+
+    # Optional wait for completion
+    if args.wait:
+        print("⏳ Waiting for Step Function to complete...")
+        waiter = sfn.get_waiter("execution_succeeded")
+        try:
+            waiter.wait(executionArn=execution_arn)
+            result = sfn.describe_execution(executionArn=execution_arn)
+            print("✅ Execution completed successfully!")
+            print("Output:")
+            print(json.dumps(json.loads(result["output"]), indent=2))
+        except ClientError as e:
+            print(f"❌ Execution failed or was aborted: {e}")
+            sys.exit(1)
+        except sfn.exceptions.ExecutionFailed:
+            print("❌ Step Function execution failed.")
+            sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()
