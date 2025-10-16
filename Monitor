@@ -1,0 +1,52 @@
+import threading
+import time
+from datetime import datetime
+
+def start_spark_monitor(spark, interval: int = 30):
+    """
+    Periodically prints Spark executor/task statistics to the Glue job logs.
+    Fully compatible with AWS Glue 5.0 / Spark 3.5.
+    """
+    tracker = spark.sparkContext.statusTracker()
+
+    def monitor():
+        while True:
+            try:
+                # --- Executors (via JVM handle) ---
+                jmap = spark._jsc.sc().getExecutorMemoryStatus()
+                jset = jmap.keySet().iterator()
+
+                exec_hosts = []
+                while jset.hasNext():
+                    exec_hosts.append(jset.next())
+
+                num_exec = len(exec_hosts) - 1  # subtract driver entry
+
+                # --- Active stages / tasks ---
+                active_tasks = 0
+                for sid in tracker.getActiveStageIds():
+                    s = tracker.getStageInfo(sid)
+                    if s:
+                        active_tasks += s.numActiveTasks()
+
+                avg_tasks = active_tasks / num_exec if num_exec > 0 else 0
+                arrow_batch = spark.conf.get(
+                    "spark.sql.execution.arrow.maxRecordsPerBatch", "default"
+                )
+
+                now = datetime.now().strftime("%H:%M:%S")
+                print(
+                    f"[{now}] [SparkMonitor] "
+                    f"Executors={num_exec:3d} | "
+                    f"ActiveTasks={active_tasks:4d} | "
+                    f"AvgTasks/Exec={avg_tasks:4.1f} | "
+                    f"ArrowBatch={arrow_batch}"
+                )
+
+                time.sleep(interval)
+
+            except Exception as e:
+                print(f"[SparkMonitor] stopped: {e}")
+                break
+
+    threading.Thread(target=monitor, daemon=True).start()
