@@ -1,0 +1,6 @@
+from pyspark.sql import SparkSession
+
+spark = SparkSession.builder.appName("Glue_PandasUDF_Monitor").getOrCreate()
+
+# 🔍 start background monitor
+start_spark_monitor(spark, interval=30)
