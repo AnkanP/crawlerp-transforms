@@ -1,0 +1,48 @@
+import threading, time
+
+def start_spark_monitor(spark, interval: int = 30):
+    """
+    Periodically logs executor/task metrics for Glue/Spark jobs.
+    Run in a background thread.
+
+    Parameters
+    ----------
+    spark : SparkSession
+        Active Spark session.
+    interval : int
+        Logging interval in seconds.
+    """
+    tracker = spark.sparkContext.statusTracker()
+
+    def monitor():
+        while True:
+            try:
+                # --- Active executors ---
+                executors = spark.sparkContext.statusTracker().getExecutorInfos()
+                num_exec = len(executors)
+                active_tasks = 0
+                total_cores = 0
+                for ex in executors:
+                    info = tracker.getExecutorInfos()
+                    total_cores = len(info) * spark.sparkContext.defaultParallelism
+                # --- Active jobs/tasks ---
+                active_stages = tracker.getActiveStageIds()
+                for sid in active_stages:
+                    stage_info = tracker.getStageInfo(sid)
+                    if stage_info:
+                        active_tasks += stage_info.numActiveTasks()
+
+                avg_tasks = active_tasks / num_exec if num_exec else 0
+
+                arrow_batch = spark.conf.get("spark.sql.execution.arrow.maxRecordsPerBatch", "default")
+                print(
+                    f"[SparkMonitor] Executors={num_exec:3d} | ActiveTasks={active_tasks:4d} | "
+                    f"AvgTasks/Exec={avg_tasks:4.1f} | ArrowBatch={arrow_batch}"
+                )
+                time.sleep(interval)
+            except Exception as e:
+                print(f"[SparkMonitor] stopped: {e}")
+                break
+
+    t = threading.Thread(target=monitor, daemon=True)
+    t.start()
