@@ -1,0 +1,12 @@
+import os, sys
+
+print("🔍 DEBUG INFO START ------------------")
+print("Current working directory:", os.getcwd())
+print("\nFiles in current directory:")
+for f in os.listdir('.'):
+    print("  ", f)
+
+print("\nPython sys.path:")
+for p in sys.path:
+    print("  ", p)
+print("🔍 DEBUG INFO END --------------------")
