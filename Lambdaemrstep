@@ -1,0 +1,34 @@
+# Prepare the EMR step
+step_config = {
+    'Name': job_name,
+    'ActionOnFailure': 'CONTINUE',
+    'HadoopJarStep': {
+        'Jar': 'command-runner.jar',
+        'Args': args
+    }
+}
+
+# Base payload for add_job_flow_steps
+add_step_params = {
+    'JobFlowId': cluster_id,
+    'Steps': [step_config]
+}
+
+# Conditionally add ExecutionRoleArn only if environment variable is set
+emr_runtime_role = os.environ.get('EMR_RUNTIME_ROLE_ARN')
+if emr_runtime_role:
+    add_step_params['ExecutionRoleArn'] = emr_runtime_role
+
+# Log and invoke API
+logger.info("Final args list: %s", args)
+logger.info("add_job_flow_steps params: %s", add_step_params)
+
+api_response = client.add_job_flow_steps(**add_step_params)
+
+logger.info(api_response)
+logger.info("## STARTED EMR STEP: %s", api_response['StepIds'][0])
+
+response = {
+    "cluster_id": cluster_id,
+    "step_id": api_response['StepIds'][0]
+}
