@@ -1,0 +1,355 @@
+#!/usr/bin/env python3
+"""
+Comprehensive Spark Session Debug Script
+Use this script to debug credentials and configurations in EMR clusters with Lake Formation
+"""
+
+import os
+import sys
+from pyspark.sql import SparkSession
+from pyspark import SparkContext
+
+def print_header(title):
+    print(f"\n{'='*80}")
+    print(f"🔍 {title}")
+    print(f"{'='*80}")
+
+def print_subheader(title):
+    print(f"\n{'─'*60}")
+    print(f"📋 {title}")
+    print(f"{'─'*60}")
+
+class SparkSessionDebugger:
+    def __init__(self):
+        self.spark = None
+        self.hconf = None
+        
+    def initialize_spark(self):
+        """Initialize or get existing Spark session"""
+        try:
+            self.spark = SparkSession.builder.getOrCreate()
+            self.hconf = self.spark.sparkContext._jsc.hadoopConfiguration()
+            print("✅ Spark session initialized successfully")
+            return True
+        except Exception as e:
+            print(f"❌ Failed to initialize Spark session: {e}")
+            return False
+
+    def debug_s3_configurations(self):
+        """Debug S3 and credential related configurations"""
+        print_header("S3 & CREDENTIAL CONFIGURATIONS")
+        
+        s3_properties = [
+            # EMRFS configurations
+            "fs.s3.enableSessionCredentials",
+            "fs.s3.customAWSCredentialsProvider",
+            "fs.s3.buffer.dir",
+            "fs.s3.consistent",
+            "fs.s3.consistent.retryCount",
+            "fs.s3.consistent.retryPeriodSeconds",
+            
+            # S3A configurations (Hadoop)
+            "fs.s3a.aws.credentials.provider",
+            "fs.s3a.access.key",
+            "fs.s3a.secret.key", 
+            "fs.s3a.session.token",
+            "fs.s3a.security.credentials",
+            "fs.s3a.impl",
+            "fs.s3a.bucket.my-bucket.aws.credentials.provider",
+            
+            # S3 Native
+            "fs.s3.impl",
+            "fs.s3n.awsAccessKeyId",
+            "fs.s3n.awsSecretAccessKey",
+        ]
+        
+        for prop in s3_properties:
+            value = self.hconf.get(prop, "NOT_SET")
+            if "key" in prop.lower() and value != "NOT_SET":
+                display_value = f"{value[:10]}...{value[-4:]}" if len(value) > 10 else "***"
+            elif "token" in prop.lower() and value != "NOT_SET":
+                display_value = "PRESENT" if value else "NOT_SET"
+            else:
+                display_value = value
+            print(f"{prop:<60}: {display_value}")
+
+    def debug_lake_formation_config(self):
+        """Debug Lake Formation and Glue configurations"""
+        print_header("LAKE FORMATION & GLUE CONFIGURATIONS")
+        
+        lf_properties = [
+            "hive.metastore.client.factory.class",
+            "hive.metastore.glue.catalogid",
+            "hive.metastore.glue.region",
+            "hive.metastore.glue.default.warehouse.dir",
+            "hive.metastore.schema.verification",
+            "hive.metastore.schema.verification.record.version",
+            "hive.metastore.warehouse.dir",
+            "hive.server2.enable.doAs",
+            "datanucleus.schema.autoCreateAll",
+            "datanucleus.fixedDatastore",
+        ]
+        
+        for prop in lf_properties:
+            hadoop_value = self.hconf.get(prop, "NOT_SET")
+            spark_value = self.spark.conf.get(prop, "NOT_SET")
+            print(f"{prop:<60}:")
+            print(f"  {'Hadoop':<10}: {hadoop_value}")
+            print(f"  {'Spark':<10}: {spark_value}")
+
+    def debug_spark_configuration(self):
+        """Debug Spark session configurations"""
+        print_header("SPARK SESSION CONFIGURATIONS")
+        
+        # Get all configurations
+        all_configs = self.spark.sparkContext.getConf().getAll()
+        
+        # Filter for relevant configurations
+        relevant_keys = [
+            'spark.hadoop', 'spark.sql', 'spark.driver', 'spark.executor',
+            'fs.s3', 'fs.s3a', 'hive.metastore', 'emr', 'glue', 
+            'lakeformation', 'aws', 'credentials'
+        ]
+        
+        print_subheader("SPARK CONTEXT CONFIGURATIONS")
+        for key, value in sorted(all_configs):
+            if any(term in key.lower() for term in relevant_keys):
+                if any(secret in key.lower() for secret in ['key', 'token', 'secret']):
+                    display_value = f"{value[:8]}...{value[-4:]}" if len(value) > 8 else "***"
+                else:
+                    display_value = value
+                print(f"{key:<80}: {display_value}")
+        
+        print_subheader("SPARK SESSION CONFIGURATIONS")
+        session_configs = self.spark.conf.getAll()
+        for key, value in sorted(session_configs):
+            if any(term in key.lower() for term in relevant_keys):
+                if any(secret in key.lower() for secret in ['key', 'token', 'secret']):
+                    display_value = f"{value[:8]}...{value[-4:]}" if len(value) > 8 else "***"
+                else:
+                    display_value = value
+                print(f"{key:<80}: {display_value}")
+
+    def debug_aws_environment(self):
+        """Debug AWS environment and credentials"""
+        print_header("AWS ENVIRONMENT & CREDENTIALS")
+        
+        print_subheader("ENVIRONMENT VARIABLES")
+        aws_env_vars = [
+            'AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY', 'AWS_SESSION_TOKEN',
+            'AWS_DEFAULT_REGION', 'AWS_REGION', 'AWS_PROFILE',
+            'AWS_ROLE_ARN', 'AWS_WEB_IDENTITY_TOKEN_FILE'
+        ]
+        
+        for var in aws_env_vars:
+            value = os.environ.get(var, 'NOT_SET')
+            if any(secret in var.lower() for secret in ['key', 'token', 'secret']):
+                display_value = f"{value[:8]}...{value[-4:]}" if value != 'NOT_SET' else value
+            else:
+                display_value = value
+            print(f"{var:<40}: {display_value}")
+        
+        print_subheader("AWS CREDENTIALS CHAIN")
+        try:
+            import boto3
+            from botocore.exceptions import ClientError
+            
+            session = boto3.Session()
+            credentials = session.get_credentials()
+            
+            if credentials:
+                print(f"{'Access Key':<20}: {credentials.access_key[:10]}...")
+                print(f"{'Secret Key':<20}: {'*' * 20}")
+                print(f"{'Token Present':<20}: {'Yes' if credentials.token else 'No'}")
+                print(f"{'Method':<20}: {credentials.method}")
+            else:
+                print("No AWS credentials found in session")
+                
+            # Test STS to get current identity
+            try:
+                sts = boto3.client('sts', region_name=os.environ.get('AWS_DEFAULT_REGION', 'us-east-1'))
+                identity = sts.get_caller_identity()
+                print(f"{'IAM ARN':<20}: {identity['Arn']}")
+                print(f"{'Account ID':<20}: {identity['Account']}")
+                print(f"{'User ID':<20}: {identity['UserId']}")
+            except ClientError as e:
+                print(f"{'STS Call Failed':<20}: {e}")
+                
+        except ImportError:
+            print("boto3 not available - install with: pip install boto3")
+        except Exception as e:
+            print(f"Error checking AWS credentials: {e}")
+
+    def debug_emr_environment(self):
+        """Debug EMR-specific environment"""
+        print_header("EMR ENVIRONMENT")
+        
+        print_subheader("EMR METADATA")
+        emr_vars = [
+            'EMR_CLUSTER_ID', 'EMR_RELEASE_LABEL', 'EMR_MASTER_MACHINE_TYPE',
+            'AWS_EMR_CLUSTER_ID', 'AWS_EMR_RELEASE_LABEL'
+        ]
+        
+        for var in emr_vars:
+            value = os.environ.get(var, 'NOT_SET')
+            print(f"{var:<40}: {value}")
+        
+        print_subheader("EC2 INSTANCE METADATA")
+        try:
+            import requests
+            # Get instance role
+            response = requests.get(
+                'http://169.254.169.254/latest/meta-data/iam/security-credentials/', 
+                timeout=2
+            )
+            if response.status_code == 200:
+                role_name = response.text.strip()
+                print(f"{'Instance Role':<30}: {role_name}")
+                
+                # Get temporary credentials
+                creds_response = requests.get(
+                    f'http://169.254.169.254/latest/meta-data/iam/security-credentials/{role_name}',
+                    timeout=2
+                )
+                if creds_response.status_code == 200:
+                    creds = creds_response.json()
+                    print(f"{'Access Key':<30}: {creds['AccessKeyId'][:10]}...")
+                    print(f"{'Token Present':<30}: {'Yes' if 'Token' in creds else 'No'}")
+                    print(f"{'Expiration':<30}: {creds.get('Expiration', 'Unknown')}")
+            else:
+                print("Not running on EC2 or cannot access instance metadata")
+        except Exception as e:
+            print(f"Instance metadata access failed: {e}")
+
+    def test_data_access(self):
+        """Test data access to various sources"""
+        print_header("DATA ACCESS TESTS")
+        
+        print_subheader("GLUE CATALOG ACCESS")
+        try:
+            databases = self.spark.sql("SHOW DATABASES")
+            print("✅ Glue Catalog access successful")
+            print("First 5 databases:")
+            databases.show(5, truncate=False)
+        except Exception as e:
+            print(f"❌ Glue Catalog access failed: {e}")
+        
+        print_subheader("LAKE FORMATION TABLE ACCESS")
+        try:
+            # Try to find Lake Formation databases
+            databases_df = self.spark.sql("SHOW DATABASES")
+            databases = [row['databaseName'] for row in databases_df.collect()]
+            lf_databases = [db for db in databases if 'lakeformation' in db.lower() or 'lf_' in db.lower()]
+            
+            if lf_databases:
+                for db in lf_databases[:2]:  # Test first 2 LF databases
+                    try:
+                        tables = self.spark.sql(f"SHOW TABLES IN {db}")
+                        table_count = tables.count()
+                        print(f"✅ Database '{db}': {table_count} tables accessible")
+                        if table_count > 0:
+                            tables.show(3, truncate=False)
+                    except Exception as e:
+                        print(f"❌ Database '{db}' access failed: {e}")
+            else:
+                print("No obvious Lake Formation databases found")
+        except Exception as e:
+            print(f"❌ Lake Formation access test failed: {e}")
+        
+        print_subheader("S3 ACCESS TEST")
+        try:
+            # Create a simple DataFrame and try to write to temp location
+            test_data = [("debug", 1), ("test", 2)]
+            test_df = self.spark.createDataFrame(test_data, ["name", "value"])
+            
+            temp_path = "s3://temp-bucket-debug-12345/spark_debug_test/"
+            try:
+                test_df.write.mode("overwrite").parquet(temp_path)
+                print(f"✅ S3 write successful: {temp_path}")
+                
+                # Try to read back
+                read_df = self.spark.read.parquet(temp_path)
+                print(f"✅ S3 read successful: {read_df.count()} rows")
+                
+            except Exception as e:
+                print(f"❌ S3 access failed: {e}")
+                
+        except Exception as e:
+            print(f"❌ S3 test setup failed: {e}")
+
+    def check_critical_properties(self):
+        """Check the most critical properties for Lake Formation"""
+        print_header("CRITICAL PROPERTIES SUMMARY")
+        
+        critical_props = {
+            "fs.s3.customAWSCredentialsProvider": {
+                "expected": "com.amazonaws.emr.AssumeRoleWithWebIdentitySessionCredentialsProvider",
+                "description": "Lake Formation credential provider"
+            },
+            "fs.s3.enableSessionCredentials": {
+                "expected": "true", 
+                "description": "Session credentials enabled"
+            },
+            "hive.metastore.client.factory.class": {
+                "expected": "com.amazonaws.glue.catalog.metastore.AWSGlueDataCatalogHiveClientFactory",
+                "description": "Glue Data Catalog integration"
+            },
+            "fs.s3a.aws.credentials.provider": {
+                "expected": "Various", 
+                "description": "Hadoop S3A credential provider"
+            }
+        }
+        
+        for prop, info in critical_props.items():
+            value = self.hconf.get(prop, "NOT_SET")
+            status = "✅" if value == info["expected"] or (prop == "fs.s3a.aws.credentials.provider" and value != "NOT_SET") else "❌"
+            print(f"{status} {prop:<60}: {value}")
+            print(f"     Description: {info['description']}")
+            if info['expected'] != "Various":
+                print(f"     Expected:    {info['expected']}")
+
+    def run_comprehensive_debug(self):
+        """Run all debug methods"""
+        print_header("SPARK SESSION COMPREHENSIVE DEBUG")
+        print(f"Python version: {sys.version}")
+        print(f"Script running from: {os.path.abspath(__file__)}")
+        
+        if not self.initialize_spark():
+            print("❌ Cannot proceed without Spark session")
+            return False
+        
+        try:
+            self.debug_s3_configurations()
+            self.debug_lake_formation_config()
+            self.debug_spark_configuration()
+            self.debug_aws_environment()
+            self.debug_emr_environment()
+            self.check_critical_properties()
+            self.test_data_access()
+            
+            print_header("DEBUG COMPLETED SUCCESSFULLY")
+            return True
+            
+        except Exception as e:
+            print(f"❌ Debug session failed: {e}")
+            return False
+
+def main():
+    """Main function"""
+    debugger = SparkSessionDebugger()
+    success = debugger.run_comprehensive_debug()
+    
+    if success:
+        print("\n🎉 Debug completed! Check the output above for configuration details.")
+        print("\n📝 Common interpretations:")
+        print("   - If 'fs.s3.customAWSCredentialsProvider' is set to Lake Formation provider → Using FGAC")
+        print("   - If 'fs.s3.enableSessionCredentials' is true → Using temporary credentials") 
+        print("   - If instance metadata shows role → Using instance profile")
+        print("   - If STS shows assumed role → Using role assumption")
+    else:
+        print("\n💥 Debug failed! Check the errors above.")
+    
+    sys.exit(0 if success else 1)
+
+if __name__ == "__main__":
+    main()
