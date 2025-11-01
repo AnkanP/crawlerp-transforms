@@ -1,0 +1,179 @@
+#!/usr/bin/env python3
+"""
+Debug script for FGAC credentials issues with database filtering
+"""
+
+from pyspark.sql import SparkSession
+import sys
+
+def debug_fgac_credentials(specific_databases=None, specific_tables=None):
+    """
+    Debug FGAC credentials with filtering options
+    
+    Args:
+        specific_databases: List of database names to test (e.g., ['sales_db', 'marketing_db'])
+        specific_tables: List of full table names to test (e.g., ['sales_db.customers', 'marketing_db.campaigns'])
+    """
+    spark = SparkSession.builder.getOrCreate()
+    hconf = spark.sparkContext._jsc.hadoopConfiguration()
+    
+    print("=== FGAC CREDENTIALS DEBUG ===")
+    
+    # 1. Check EMRFS Configuration
+    print("\n1. EMRFS CONFIGURATION:")
+    emrfs_props = [
+        "fs.s3.enableSessionCredentials",
+        "fs.s3.customAWSCredentialsProvider",
+        "fs.s3.consistent"
+    ]
+    for prop in emrfs_props:
+        value = hconf.get(prop, "NOT_SET")
+        print(f"   {prop}: {value}")
+    
+    # 2. Check Lake Formation Configuration
+    print("\n2. LAKE FORMATION CONFIGURATION:")
+    lf_props = [
+        "hive.metastore.client.factory.class",
+        "hive.metastore.glue.catalogid"
+    ]
+    for prop in lf_props:
+        value = hconf.get(prop, "NOT_SET")
+        print(f"   {prop}: {value}")
+    
+    # 3. Test Basic Access with Filtering
+    print("\n3. DATABASE ACCESS TESTS:")
+    try:
+        databases_df = spark.sql("SHOW DATABASES")
+        all_databases = [row['databaseName'] for row in databases_df.collect()]
+        
+        if specific_databases:
+            # Filter to specific databases
+            databases_to_test = [db for db in specific_databases if db in all_databases]
+            not_found = [db for db in specific_databases if db not in all_databases]
+            
+            if not_found:
+                print(f"   ⚠️  Databases not found: {not_found}")
+        else:
+            # Use all databases or sample if too many
+            databases_to_test = all_databases[:10]  # Limit to first 10 if no filter
+            if len(all_databases) > 10:
+                print(f"   ℹ️  Testing first 10 of {len(all_databases)} databases")
+        
+        print(f"   ✅ Glue Catalog accessible - testing {len(databases_to_test)} databases")
+        
+        # Test each database
+        for db in databases_to_test:
+            try:
+                tables_df = spark.sql(f"SHOW TABLES IN {db}")
+                table_count = tables_df.count()
+                print(f"      📁 {db}: {table_count} tables")
+                
+                # Show first few tables if requested
+                if table_count > 0 and specific_tables:
+                    tables_in_db = [f"{db}.{row['tableName']}" for row in tables_df.collect()]
+                    matching_tables = [tbl for tbl in specific_tables if tbl in tables_in_db]
+                    for tbl in matching_tables:
+                        print(f"         📊 {tbl}")
+                        
+            except Exception as e:
+                print(f"      ❌ {db} access failed: {e}")
+                
+    except Exception as e:
+        print(f"   ❌ Glue Catalog access failed: {e}")
+    
+    # 4. Test Specific Table Reads
+    print("\n4. SPECIFIC TABLE READ TESTS:")
+    if specific_tables:
+        for table_name in specific_tables:
+            try:
+                # Validate table format
+                if '.' not in table_name:
+                    print(f"   ⚠️  Invalid table name (missing database): {table_name}")
+                    continue
+                    
+                test_df = spark.sql(f"SELECT * FROM {table_name} LIMIT 1")
+                row_count = test_df.count()
+                print(f"   ✅ {table_name} - Read successful ({row_count} rows)")
+                
+                # Show schema
+                print(f"      Schema: {[(f.name, f.dataType) for f in test_df.schema][:3]}...")
+                
+            except Exception as e:
+                print(f"   ❌ {table_name} - Read failed: {e}")
+    else:
+        print("   ℹ️  No specific tables provided for read testing")
+    
+    # 5. Test Table Write to Specific Databases
+    print("\n5. TABLE WRITE TESTS:")
+    if specific_databases:
+        for db in specific_databases:
+            try:
+                # Create a simple test dataframe
+                test_data = [("debug", 1)]
+                test_df = spark.createDataFrame(test_data, ["name", "value"])
+                
+                # Try to write to a test table in this database
+                test_table = f"{db}.debug_test_table_{hash(db) % 10000}"  # Unique name
+                
+                test_df.write.mode("overwrite").saveAsTable(test_table)
+                print(f"   ✅ {test_table} - Write successful")
+                
+                # Verify we can read it back
+                verify_df = spark.sql(f"SELECT * FROM {test_table}")
+                verify_count = verify_df.count()
+                print(f"      Verified: {verify_count} rows")
+                
+                # Cleanup
+                spark.sql(f"DROP TABLE IF EXISTS {test_table}")
+                print(f"      Cleanup: Table dropped")
+                
+            except Exception as e:
+                print(f"   ❌ {db} - Write failed: {e}")
+                import traceback
+                traceback.print_exc()
+    else:
+        print("   ℹ️  No specific databases provided for write testing")
+
+def get_user_input():
+    """Get database and table filters from user input"""
+    print("=== FILTER CONFIGURATION ===")
+    
+    # Get database filter
+    db_input = input("Enter databases to test (comma-separated, or press Enter for all): ").strip()
+    if db_input:
+        specific_databases = [db.strip() for db in db_input.split(',')]
+        print(f"Target databases: {specific_databases}")
+    else:
+        specific_databases = None
+        print("Testing all databases (sampled)")
+    
+    # Get table filter
+    table_input = input("Enter specific tables to test (db.table format, comma-separated, or press Enter): ").strip()
+    if table_input:
+        specific_tables = [tbl.strip() for tbl in table_input.split(',')]
+        print(f"Target tables: {specific_tables}")
+    else:
+        specific_tables = None
+        print("No specific tables provided")
+    
+    return specific_databases, specific_tables
+
+if __name__ == "__main__":
+    # Option 1: Use command line arguments
+    if len(sys.argv) > 1:
+        if sys.argv[1] == "--help":
+            print("""
+Usage:
+  python fgac_debug.py                                 # Interactive mode
+  python fgac_debug.py sales_db,marketing_db           # Specific databases
+  python fgac_debug.py sales_db,marketing_db sales_db.customers,marketing_db.campaigns  # DBs and tables
+            """)
+            sys.exit(0)
+        
+        specific_databases = [db.strip() for db in sys.argv[1].split(',')] if len(sys.argv) > 1 else None
+        specific_tables = [tbl.strip() for tbl in sys.argv[2].split(',')] if len(sys.argv) > 2 else None
+    else:
+        # Option 2: Interactive mode
+        specific_databases, specific_tables = get_user_input()
+    
+    debug_fgac_credentials(specific_databases, specific_tables)
