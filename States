@@ -1,0 +1,1 @@
+"States.JsonMerge($.params.result, States.StringToJson(States.Format('{{{{\"date_processed\": \"{}\"}}}}', $.Map.Item.Value)), false)"
