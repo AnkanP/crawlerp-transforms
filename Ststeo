@@ -1,0 +1,14 @@
+{
+  "StartAt": "IterateDates",
+  "States": {
+    "IterateDates": {
+      "Type": "Map",
+      "ItemsPath": "$.dates",
+      "Parameters": {
+        "merged.$": "States.JsonMerge($.params.result, States.StringToJson(States.Format('{{{{\"date_processed\": \"{}\"}}}}', $$.Map.Item.Value)), false)"
+      },
+      "ResultPath": "$.processed",
+      "End": true
+    }
+  }
+}
