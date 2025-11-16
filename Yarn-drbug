@@ -1,0 +1,63 @@
+#!/bin/bash
+
+echo "===================="
+echo "INSTANCE MEMORY INFO"
+echo "===================="
+echo
+free -h
+echo
+echo "Total RAM (MB):"
+grep MemTotal /proc/meminfo
+
+echo
+echo "===================="
+echo "YARN NODE RESOURCES"
+echo "===================="
+echo
+yarn node -list -showDetails 2>/dev/null | sed -e 's/^/  /'
+echo
+
+echo "===================="
+echo "YARN-SITE SETTINGS"
+echo "===================="
+echo
+
+grep -E "yarn.nodemanager.resource.memory-mb|yarn.scheduler.maximum-allocation-mb|yarn.scheduler.minimum-allocation-mb|yarn.nodemanager.resource.cpu-vcores|yarn.scheduler.maximum-allocation-vcores" \
+    /etc/hadoop/conf/yarn-site.xml 2>/dev/null | sed -e 's/^/  /'
+echo
+
+echo "===================="
+echo "CAPACITY SCHEDULER"
+echo "===================="
+echo
+grep -E "yarn.scheduler.capacity.maximum-am-resource-percent|yarn.scheduler.capacity.resource-calculator" \
+    /etc/hadoop/conf/capacity-scheduler.xml 2>/dev/null | sed -e 's/^/  /'
+echo
+
+echo "===================="
+echo "SPARK DEFAULTS"
+echo "===================="
+echo
+grep -E "spark.executor|spark.driver|spark.dynamicAllocation|spark.yarn" \
+    /etc/spark/conf/spark-defaults.conf 2>/dev/null | sed -e 's/^/  /'
+echo
+
+echo "===================="
+echo "ACTIVE SPARK CONFIG (Driver Side)"
+echo "===================="
+echo
+spark-submit --verbose --class org.apache.spark.deploy.SparkSubmit --version 2>/dev/null | grep -i "spark" | head -50
+echo
+
+echo "===================="
+echo "LAKE FORMATION FGAC FLAGS"
+echo "===================="
+echo
+grep -E "lakeformation|aws.enableICC|recordserver" \
+    /etc/spark/conf/spark-defaults.conf \
+    /etc/hadoop/conf/core-site.xml 2>/dev/null | sed -e 's/^/  /'
+echo
+
+echo "===================="
+echo "DONE"
+echo "===================="
