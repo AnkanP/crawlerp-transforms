@@ -1,0 +1,176 @@
+from pydeequ.checks import Check
+from pydeequ.verification import VerificationSuite, VerificationResult
+from pyspark.sql import SparkSession, DataFrame
+from pyspark.sql.functions import lit, current_timestamp, col
+from pyspark.sql.types import StructType, StructField, StringType, TimestampType, DoubleType, BooleanType
+import datetime
+from typing import Dict, Any
+
+class DeequResultsIcebergStorage:
+    def __init__(self, spark: SparkSession, iceberg_catalog: str = "my_catalog"):
+        self.spark = spark
+        self.iceberg_catalog = iceberg_catalog
+        self.results_table = f"{iceberg_catalog}.quality.data_quality_results"
+        
+    def create_results_table_if_not_exists(self):
+        """Create Iceberg table for storing verification results"""
+        
+        create_table_sql = f"""
+        CREATE TABLE IF NOT EXISTS {self.results_table} (
+            table_name STRING,
+            date_processed DATE,
+            execution_name STRING,
+            check_column STRING,
+            check_type STRING,
+            constraint STRING,
+            constraint_status STRING,
+            constraint_message STRING,
+            number_of_rows_analyzed LONG,
+            constraint_result_value DOUBLE,
+            constraint_result_threshold DOUBLE,
+            check_status STRING,
+            check_level STRING,
+            timestamp TIMESTAMP,
+            additional_metadata STRING,
+            -- Primary key definition
+            PRIMARY KEY (table_name, date_processed, execution_name)
+        )
+        USING iceberg
+        PARTITIONED BY (date_processed)
+        TBLPROPERTIES (
+            'format-version'='2',
+            'write.upsert.enabled'='true'
+        )
+        """
+        self.spark.sql(create_table_sql)
+    
+    def store_verification_results(
+        self,
+        df: DataFrame,
+        table_name: str,
+        execution_name: str,
+        config_path: str,
+        additional_metadata: Dict[str, Any] = None
+    ):
+        """
+        Run verification and store results in Iceberg table
+        """
+        # Load checks from config
+        checks = self._load_checks_from_config(config_path)
+        
+        # Run verification
+        verification_result = VerificationSuite(self.spark).onData(df).addChecks(checks).run()
+        
+        # Convert to DataFrame
+        result_df = VerificationResult.checkResultsAsDataFrame(self.spark, verification_result)
+        
+        # Prepare results for Iceberg storage
+        iceberg_results = self._prepare_results_for_iceberg(
+            result_df, table_name, execution_name, additional_metadata
+        )
+        
+        # Write to Iceberg table
+        self._write_to_iceberg(iceberg_results)
+        
+        return iceberg_results
+    
+    def _load_checks_from_config(self, config_path: str):
+        """Load checks from configuration (using previous examples)"""
+        # Implementation from previous examples
+        checks = []
+        check = Check(self.spark, "error")
+        
+        # Your config loading logic here
+        # This is a simplified example
+        checks.append(check.isComplete("user_id"))
+        checks.append(check.isUnique("user_id"))
+        checks.append(check.isComplete("email"))
+        
+        return checks
+    
+    def _prepare_results_for_iceberg(
+        self,
+        result_df: DataFrame,
+        table_name: str,
+        execution_name: str,
+        additional_metadata: Dict[str, Any] = None
+    ) -> DataFrame:
+        """Prepare verification results for Iceberg storage"""
+        
+        # Add primary key columns and metadata
+        enriched_df = result_df \
+            .withColumn("table_name", lit(table_name)) \
+            .withColumn("date_processed", current_timestamp().cast("date")) \
+            .withColumn("execution_name", lit(execution_name)) \
+            .withColumn("timestamp", current_timestamp()) \
+            .withColumn("additional_metadata", lit(str(additional_metadata) if additional_metadata else ""))
+        
+        # Select and rename columns for Iceberg schema
+        iceberg_df = enriched_df.select(
+            col("table_name"),
+            col("date_processed"),
+            col("execution_name"),
+            col("column").alias("check_column"),
+            col("constraint").alias("check_type"),
+            col("constraint").alias("constraint"),  # Original constraint string
+            col("constraint_status"),
+            col("constraint_message"),
+            col("number_of_rows_analyzed"),
+            col("constraint_result_value"),
+            col("constraint_result_threshold"),
+            col("check_status"),
+            col("check_level"),
+            col("timestamp"),
+            col("additional_metadata")
+        )
+        
+        return iceberg_df
+    
+    def _write_to_iceberg(self, results_df: DataFrame):
+        """Write results to Iceberg table with upsert capability"""
+        
+        # Ensure table exists
+        self.create_results_table_if_not_exists()
+        
+        # Write using merge to handle primary key conflicts
+        results_df.createOrReplaceTempView("new_results")
+        
+        merge_sql = f"""
+        MERGE INTO {self.results_table} target
+        USING new_results source
+        ON target.table_name = source.table_name 
+           AND target.date_processed = source.date_processed 
+           AND target.execution_name = source.execution_name
+           AND target.check_column = source.check_column
+           AND target.check_type = source.check_type
+        WHEN MATCHED THEN
+            UPDATE SET *
+        WHEN NOT MATCHED THEN
+            INSERT *
+        """
+        
+        self.spark.sql(merge_sql)
+    
+    def get_historical_results(
+        self,
+        table_name: str = None,
+        start_date: str = None,
+        end_date: str = None,
+        execution_name: str = None
+    ) -> DataFrame:
+        """Query historical verification results"""
+        
+        query = f"SELECT * FROM {self.results_table} WHERE 1=1"
+        
+        if table_name:
+            query += f" AND table_name = '{table_name}'"
+        if start_date:
+            query += f" AND date_processed >= '{start_date}'"
+        if end_date:
+            query += f" AND date_processed <= '{end_date}'"
+        if execution_name:
+            query += f" AND execution_name = '{execution_name}'"
+            
+        query += " ORDER BY timestamp DESC"
+        
+        return self.spark.sql(query)
