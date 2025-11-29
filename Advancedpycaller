@@ -1,0 +1,87 @@
+#!/usr/bin/env python3
+"""
+Advanced usage example with multiple tables and monitoring
+"""
+
+import datetime
+from pyspark.sql import SparkSession
+from src import EnhancedDeequIcebergStorage, DeequResultsQuery
+
+def advanced_example():
+    """Advanced example with multiple tables and trend analysis"""
+    
+    spark = SparkSession.builder \
+        .appName("AdvancedDeequExample") \
+        .config("spark.sql.catalog.my_catalog", "org.apache.iceberg.spark.SparkCatalog") \
+        .config("spark.sql.catalog.my_catalog.type", "hive") \
+        .getOrCreate()
+    
+    # Initialize components
+    storage = EnhancedDeequIcebergStorage(spark, "my_catalog")
+    query_tool = DeequResultsQuery(spark, "my_catalog")
+    
+    # Example configuration as dictionary (alternative to file)
+    config_dict = {
+        "verification_checks": {
+            "completeness": [
+                {"column": "id", "constraint": "isComplete", "threshold": 0.99},
+                {"column": "value", "constraint": "isComplete", "threshold": 0.95}
+            ],
+            "uniqueness": [
+                {"column": "id", "constraint": "isUnique", "threshold": 1.0}
+            ]
+        }
+    }
+    
+    # Create multiple test datasets
+    tables_data = {
+        "sales_transactions": [
+            (1, 100.0, "2024-01-15", "NY"),
+            (2, 150.0, "2024-01-15", "CA"),
+            (3, 200.0, "2024-01-15", "TX"),
+            (4, 75.0, "2024-01-15", "FL")
+        ],
+        "customer_profiles": [
+            (1, "customer1@example.com", "Premium", "2024-01-01"),
+            (2, "customer2@example.com", "Standard", "2024-01-01"),
+            (3, "customer3@example.com", "Premium", "2024-01-01")
+        ]
+    }
+    
+    # Process each table
+    for table_name, data in tables_data.items():
+        df = spark.createDataFrame(data, ["id", "value", "date", "region"])
+        
+        execution_name = f"{table_name}_check_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        
+        try:
+            storage.store_verification_with_metrics(
+                df=df,
+                table_name=table_name,
+                execution_name=execution_name,
+                config_dict=config_dict,
+                additional_metadata={"batch_id": "advanced_example_001"}
+            )
+            print(f"✅ Processed table: {table_name}")
+            
+        except Exception as e:
+            print(f"❌ Failed to process {table_name}: {e}")
+    
+    # Analyze results
+    print("\n📈 Quality Trends Analysis:")
+    for table_name in tables_data.keys():
+        trends = query_tool.get_quality_trend(table_name, days=7)
+        if trends.count() > 0:
+            print(f"\n{table_name} Quality Trend:")
+            trends.show()
+    
+    print("\n🔍 Failed Checks Summary:")
+    failed_checks = query_tool.get_failed_checks_summary("sales_transactions")
+    failed_checks.show()
+    
+    print("\n📊 Check Success Rates:")
+    success_rates = query_tool.get_check_success_rates("sales_transactions")
+    success_rates.show()
+
+if __name__ == "__main__":
+    advanced_example()
