@@ -1,0 +1,73 @@
+from pydeequ.checks import *
+from pydeequ.verification import *
+from pydeequ.analyzers import *
+import json
+
+# Configuration structure
+check_config = {
+    "completeness_checks": [
+        {"column": "id", "threshold": 1.0, "description": "Primary key must be complete"},
+        {"column": "name", "threshold": 0.95, "description": "Name should be 95% complete"},
+        {"column": "email", "threshold": 0.90, "description": "Email should be 90% complete"}
+    ],
+    "uniqueness_checks": [
+        {"columns": ["id"], "threshold": 1.0, "description": "ID must be unique"},
+        {"columns": ["user_id", "timestamp"], "threshold": 1.0, "description": "Composite key must be unique"}
+    ],
+    "size_checks": [
+        {"expected_size": 1000, "description": "Should have exactly 1000 rows"},
+        {"min_size": 500, "max_size": 1500, "description": "Should have between 500-1500 rows"}
+    ],
+    "value_checks": [
+        {"column": "age", "min_value": 0, "max_value": 120, "description": "Age should be realistic"},
+        {"column": "salary", "min_value": 0, "description": "Salary should be non-negative"}
+    ]
+}
+
+def build_checks_from_config(spark, config):
+    """
+    Build PyDeequ checks from configuration
+    """
+    check = Check(spark, CheckLevel.Error, "Config-Driven Data Quality Check")
+    
+    # Add completeness checks
+    for comp_check in config.get("completeness_checks", []):
+        column = comp_check["column"]
+        threshold = comp_check["threshold"]
+        check = check.isComplete(column, lambda completeness, th=threshold: completeness >= th)
+    
+    # Add uniqueness checks
+    for unique_check in config.get("uniqueness_checks", []):
+        columns = unique_check["columns"]
+        threshold = unique_check["threshold"]
+        if len(columns) == 1:
+            check = check.isUnique(columns[0], lambda uniqueness, th=threshold: uniqueness >= th)
+        else:
+            check = check.hasUniqueness(columns, lambda uniqueness, th=threshold: uniqueness >= th)
+    
+    # Add size checks
+    for size_check in config.get("size_checks", []):
+        if "expected_size" in size_check:
+            expected = size_check["expected_size"]
+            check = check.hasSize(lambda size, exp=expected: size == exp)
+        elif "min_size" in size_check and "max_size" in size_check:
+            min_size = size_check["min_size"]
+            max_size = size_check["max_size"]
+            check = check.hasSize(lambda size, min_s=min_size, max_s=max_size: min_s <= size <= max_s)
+    
+    # Add value checks
+    for value_check in config.get("value_checks", []):
+        column = value_check["column"]
+        if "min_value" in value_check and "max_value" in value_check:
+            min_val = value_check["min_value"]
+            max_val = value_check["max_value"]
+            check = check.isContainedIn(column, list(range(min_val, max_val + 1)))
+        elif "min_value" in value_check:
+            min_val = value_check["min_value"]
+            check = check.isNonNegative(column)
+    
+    return check
+
+# Usage
+check = build_checks_from_config(spark, check_config)
+result = VerificationSuite(spark).onData(df).addCheck(check).run()
