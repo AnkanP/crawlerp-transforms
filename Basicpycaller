@@ -1,0 +1,89 @@
+#!/usr/bin/env python3
+"""
+Basic usage example for Deequ Iceberg Storage
+"""
+
+import os
+import sys
+from pyspark.sql import SparkSession
+from src import EnhancedDeequIcebergStorage
+
+def setup_spark() -> SparkSession:
+    """Setup Spark session with Iceberg configuration"""
+    
+    return SparkSession.builder \
+        .appName("DeequIcebergExample") \
+        .config("spark.sql.catalog.my_catalog", "org.apache.iceberg.spark.SparkCatalog") \
+        .config("spark.sql.catalog.my_catalog.type", "hive") \
+        .config("spark.sql.catalog.my_catalog.uri", "thrift://metastore:9083") \
+        .config("spark.sql.extensions", "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions") \
+        .config("spark.sql.warehouse.dir", "/user/hive/warehouse") \
+        .getOrCreate()
+
+def main():
+    """Main execution function"""
+    
+    # Initialize Spark
+    spark = setup_spark()
+    
+    # Create sample data
+    sample_data = [
+        (1, "john@example.com", "John Doe", 25, 85.5, "2024-01-15", True),
+        (2, "jane@example.com", "Jane Smith", 30, 92.0, "2024-01-15", True),
+        (3, "bob@example.com", "Bob Johnson", 35, 78.5, "2024-01-15", False),
+        (4, "alice@example.com", "Alice Brown", 28, 95.0, "2024-01-15", True),
+        (5, None, "Charlie Wilson", 45, 88.0, "2024-01-15", True)  # Missing email for testing
+    ]
+    
+    df = spark.createDataFrame(
+        sample_data, 
+        ["user_id", "email", "name", "age", "score", "created_at", "is_active"]
+    )
+    
+    # Initialize storage
+    storage = EnhancedDeequIcebergStorage(spark, "my_catalog")
+    
+    # Define execution parameters
+    table_name = "user_profiles"
+    execution_name = f"basic_example_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    config_path = "config/data_quality_config.json"
+    
+    additional_metadata = {
+        "data_source": "example_database",
+        "processing_version": "v1.0.0",
+        "business_domain": "user_management",
+        "environment": "development"
+    }
+    
+    try:
+        # Run verification and store results
+        results = storage.store_verification_with_metrics(
+            df=df,
+            table_name=table_name,
+            execution_name=execution_name,
+            config_path=config_path,
+            additional_metadata=additional_metadata
+        )
+        
+        print("✅ Verification completed successfully!")
+        print(f"📊 Results stored for table: {table_name}")
+        print(f"🔧 Execution: {execution_name}")
+        
+        # Show some results
+        results.select("check_column", "check_type", "constraint_status", "constraint_message") \
+               .show(truncate=False)
+        
+        # Query metrics
+        metrics = storage.get_quality_metrics(table_name=table_name)
+        metrics.select("date_processed", "total_checks", "passed_checks", "success_rate") \
+              .show()
+        
+    except Exception as e:
+        print(f"❌ Error during verification: {e}")
+        return 1
+    
+    return 0
+
+if __name__ == "__main__":
+    import datetime
+    sys.exit(main())
