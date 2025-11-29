@@ -1,0 +1,38 @@
+import json
+from pydeequ.checks import Check
+from pydeequ.verification import VerificationSuite
+from pyspark.sql import SparkSession
+
+def load_checks_from_config(config_path, level="error"):
+    """Load verification checks from JSON config"""
+    with open(config_path, 'r') as f:
+        config = json.load(f)
+    
+    checks = []
+    check = Check(spark, level)
+    
+    for check_type, constraints in config['verification_checks'].items():
+        for constraint in constraints:
+            column = constraint['column']
+            constraint_type = constraint['constraint']
+            
+            if constraint_type == "isComplete":
+                checks.append(check.isComplete(column))
+            elif constraint_type == "isUnique":
+                checks.append(check.isUnique(column))
+            elif constraint_type == "isBetween":
+                checks.append(check.isBetween(column, 
+                    constraint['min_value'], constraint['max_value']))
+            elif constraint_type == "containsPattern":
+                checks.append(check.containsPattern(column, constraint['pattern']))
+            elif constraint_type == "hasDataType":
+                checks.append(check.hasDataType(column, constraint['data_type']))
+    
+    return checks
+
+# Usage
+spark = SparkSession.builder.getOrCreate()
+df = spark.read.parquet("your_data.parquet")
+
+checks = load_checks_from_config("config.json")
+result = VerificationSuite(spark).onData(df).addChecks(checks).run()
