@@ -1,0 +1,17 @@
+{
+  "verification_checks": {
+    "completeness": [
+      {"column": "user_id", "constraint": "isComplete"},
+      {"column": "email", "constraint": "isComplete"}
+    ],
+    "uniqueness": [
+      {"column": "user_id", "constraint": "isUnique"}
+    ],
+    "value_ranges": [
+      {"column": "age", "constraint": "isBetween", "min_value": 0, "max_value": 120}
+    ],
+    "patterns": [
+      {"column": "email", "constraint": "containsPattern", "pattern": ".+@.+\\..+"}
+    ]
+  }
+}
