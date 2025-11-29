@@ -1,0 +1,103 @@
+class EnhancedDeequIcebergStorage(DeequResultsIcebergStorage):
+    def __init__(self, spark: SparkSession, iceberg_catalog: str = "my_catalog"):
+        super().__init__(spark, iceberg_catalog)
+        self.metrics_table = f"{iceberg_catalog}.quality.data_quality_metrics"
+    
+    def create_metrics_table(self):
+        """Create additional table for aggregated metrics"""
+        
+        create_metrics_sql = f"""
+        CREATE TABLE IF NOT EXISTS {self.metrics_table} (
+            table_name STRING,
+            date_processed DATE,
+            execution_name STRING,
+            total_checks LONG,
+            passed_checks LONG,
+            failed_checks LONG,
+            success_rate DOUBLE,
+            data_quality_score DOUBLE,
+            timestamp TIMESTAMP,
+            PRIMARY KEY (table_name, date_processed, execution_name)
+        )
+        USING iceberg
+        PARTITIONED BY (date_processed)
+        """
+        self.spark.sql(create_metrics_sql)
+    
+    def store_verification_with_metrics(
+        self,
+        df: DataFrame,
+        table_name: str,
+        execution_name: str,
+        config_path: str,
+        additional_metadata: Dict[str, Any] = None
+    ):
+        """Store verification results along with aggregated metrics"""
+        
+        try:
+            # Store detailed results
+            detailed_results = self.store_verification_results(
+                df, table_name, execution_name, config_path, additional_metadata
+            )
+            
+            # Calculate and store metrics
+            self._store_aggregated_metrics(detailed_results, table_name, execution_name)
+            
+            return detailed_results
+            
+        except Exception as e:
+            print(f"Error storing verification results: {e}")
+            # Store error information
+            self._store_error_metrics(table_name, execution_name, str(e))
+            raise
+    
+    def _store_aggregated_metrics(self, results_df: DataFrame, table_name: str, execution_name: str):
+        """Calculate and store aggregated data quality metrics"""
+        
+        results_df.createOrReplaceTempView("temp_results")
+        
+        metrics_df = self.spark.sql(f"""
+            SELECT 
+                '{table_name}' as table_name,
+                date_processed,
+                '{execution_name}' as execution_name,
+                COUNT(*) as total_checks,
+                SUM(CASE WHEN constraint_status = 'Success' THEN 1 ELSE 0 END) as passed_checks,
+                SUM(CASE WHEN constraint_status = 'Failure' THEN 1 ELSE 0 END) as failed_checks,
+                ROUND(SUM(CASE WHEN constraint_status = 'Success' THEN 1 ELSE 0 END) * 100.0 / COUNT(*), 2) as success_rate,
+                ROUND(AVG(CASE WHEN constraint_status = 'Success' THEN constraint_result_value ELSE 0 END), 4) as data_quality_score,
+                current_timestamp() as timestamp
+            FROM temp_results
+            WHERE table_name = '{table_name}' AND execution_name = '{execution_name}'
+            GROUP BY date_processed
+        """)
+        
+        # Ensure metrics table exists
+        self.create_metrics_table()
+        
+        # Write metrics to Iceberg
+        metrics_df.writeTo(self.metrics_table) \
+            .using("iceberg") \
+            .createOrReplace()
+    
+    def _store_error_metrics(self, table_name: str, execution_name: str, error_message: str):
+        """Store error information when verification fails"""
+        
+        error_df = self.spark.createDataFrame([(
+            table_name,
+            datetime.date.today(),
+            execution_name,
+            0,  # total_checks
+            0,  # passed_checks  
+            0,  # failed_checks
+            0.0,  # success_rate
+            0.0,  # data_quality_score
+            current_timestamp(),
+            error_message
+        )], ["table_name", "date_processed", "execution_name", "total_checks", 
+             "passed_checks", "failed_checks", "success_rate", 
+             "data_quality_score", "timestamp", "error_message"])
+        
+        error_df.writeTo(self.metrics_table) \
+            .using("iceberg") \
+            .createOrReplace()
