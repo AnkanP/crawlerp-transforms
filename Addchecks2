@@ -1,0 +1,93 @@
+from typing import Dict, List, Any, Callable
+
+class DynamicCheckBuilder:
+    def __init__(self, spark):
+        self.spark = spark
+        self.check_builders = {
+            'completeness': self._build_completeness_check,
+            'uniqueness': self._build_uniqueness_check,
+            'size': self._build_size_check,
+            'range': self._build_range_check,
+            'primary_key': self._build_primary_key_check
+        }
+    
+    def _build_completeness_check(self, check: Check, config: Dict) -> Check:
+        column = config['column']
+        threshold = config.get('threshold', 1.0)
+        return check.isComplete(column, lambda completeness, th=threshold: completeness >= th)
+    
+    def _build_uniqueness_check(self, check: Check, config: Dict) -> Check:
+        columns = config['columns']
+        threshold = config.get('threshold', 1.0)
+        if len(columns) == 1:
+            return check.isUnique(columns[0], lambda uniqueness, th=threshold: uniqueness >= th)
+        else:
+            return check.hasUniqueness(columns, lambda uniqueness, th=threshold: uniqueness >= th)
+    
+    def _build_size_check(self, check: Check, config: Dict) -> Check:
+        if 'expected_size' in config:
+            expected = config['expected_size']
+            return check.hasSize(lambda size, exp=expected: size == exp)
+        elif 'min_size' in config and 'max_size' in config:
+            min_size = config['min_size']
+            max_size = config['max_size']
+            return check.hasSize(lambda size, min_s=min_size, max_s=max_size: min_s <= size <= max_s)
+        return check
+    
+    def _build_range_check(self, check: Check, config: Dict) -> Check:
+        column = config['column']
+        min_val = config.get('min_value')
+        max_val = config.get('max_value')
+        
+        if min_val is not None and max_val is not None:
+            # This is simplified - in practice you might need custom analysis for numeric ranges
+            return check
+        return check
+    
+    def _build_primary_key_check(self, check: Check, config: Dict) -> Check:
+        columns = config['columns']
+        # Primary key implies completeness and uniqueness
+        check = check.hasUniqueness(columns, lambda uniqueness: uniqueness == 1.0)
+        for column in columns:
+            check = check.isComplete(column)
+        return check
+    
+    def build_checks(self, config: Dict) -> List[Check]:
+        """Build checks from configuration"""
+        checks = []
+        
+        for check_type, check_configs in config.items():
+            for config_item in check_configs:
+                level = CheckLevel[config_item.get('level', 'Error')]
+                description = config_item.get('description', f"{check_type}_check")
+                
+                check = Check(self.spark, level, description)
+                builder = self.check_builders.get(check_type)
+                if builder:
+                    check = builder(check, config_item)
+                    checks.append(check)
+        
+        return checks
+
+# Usage
+config = {
+    "completeness": [
+        {"column": "id", "threshold": 1.0, "level": "Error", "description": "ID completeness"},
+        {"column": "name", "threshold": 0.95, "level": "Warning", "description": "Name completeness"}
+    ],
+    "primary_key": [
+        {"columns": ["id"], "level": "Error", "description": "Primary key constraint"}
+    ],
+    "size": [
+        {"expected_size": 1000, "level": "Error", "description": "Exact row count"}
+    ]
+}
+
+builder = DynamicCheckBuilder(spark)
+checks = builder.build_checks(config)
+
+# Run all checks
+verification_suite = VerificationSuite(spark).onData(df)
+for check in checks:
+    verification_suite = verification_suite.addCheck(check)
+result = verification_suite.run()
