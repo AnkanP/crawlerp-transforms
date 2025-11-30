@@ -1,0 +1,16 @@
+BRACKETS_PATTERN = "[\\(\\)\\[\\]\\{\\}]"
+
+check_df = check_df.withColumn(
+    "dq_columns",
+    F.expr(
+        f"""
+        filter(
+            transform(
+                dq_columns,
+                x -> regexp_replace(trim(x), '{BRACKETS_PATTERN}', '')
+            ),
+            x -> x != ''
+        )
+        """
+    )
+)
