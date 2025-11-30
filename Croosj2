@@ -1,0 +1,44 @@
+from pyspark.sql import SparkSession
+from pyspark.sql.functions import *
+
+spark = SparkSession.builder.appName("SubstringMatch").getOrCreate()
+
+# Sample data - employees with short names
+employees = spark.createDataFrame([
+    (1, "John"),
+    (2, "Jane"),
+    (3, "Bob"),
+    (4, "Mike"),  # This won't match
+    (5, "Rob")    # This will match "Robert"
+], ["emp_id", "short_name"])
+
+# Sample data - employee records with full names
+employee_records = spark.createDataFrame([
+    ("John Doe", "Engineering", "New York"),
+    ("Jane Smith", "Marketing", "Chicago"),
+    ("Robert Johnson", "Sales", "Boston"),
+    ("Alice Brown", "HR", "Seattle")
+], ["full_name", "department", "location"])
+
+# Substring matching: find if short_name is contained in full_name
+result = employees.crossJoin(employee_records) \
+    .filter(col("full_name").contains(col("short_name"))) \
+    .groupBy("emp_id", "short_name") \
+    .agg(
+        first("full_name").alias("matched_full_name"),
+        first("department").alias("department"),
+        first("location").alias("location"),
+        lit(True).alias("match_found")
+    )
+
+# Show results
+result.show()
+
+# Output:
+# +------+-----------+----------------+-----------+--------+----------+
+# |emp_id|short_name|matched_full_name| department|location|match_found|
+# +------+-----------+----------------+-----------+--------+----------+
+# |     1|       John|         John Doe|Engineering|New York|      true|
+# |     2|       Jane|       Jane Smith|  Marketing| Chicago|      true|
+# |     5|        Rob|   Robert Johnson|      Sales|  Boston|      true|
+# +------+-----------+----------------+-----------+--------+----------+
