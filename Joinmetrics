@@ -1,0 +1,72 @@
+from pyspark.sql import functions as F
+from pyspark.sql import DataFrame
+
+def join_deequ_results_multi_col(check_df: DataFrame, metrics_df: DataFrame) -> DataFrame:
+    """
+    Join PyDeequ check results with success metrics.
+    Extracts *multiple* columns from constraints.
+
+    Returns a list field: dq_columns (array<string>)
+    """
+
+    # ------------------------------ EXTRACT MULTIPLE COLUMNS ------------------------------
+    # Extract all values inside parentheses: e.g., "(colA, colB)" or "(colA,colB)"
+    columns_from_parentheses = F.regexp_extract("constraint", r"\(([^()]*)\)", 1)
+
+    # Split by comma → array<string>
+    col_list = F.split(
+        F.regexp_replace(columns_from_parentheses, r"\s+", ""),  # remove spaces
+        ","
+    )
+
+    # Extract columns from patterns like "column: amount" or "columns: [a, b]"
+    columns_from_named = F.split(
+        F.regexp_extract("constraint", r"(?:column|columns):\s*([a-zA-Z0-9_,\s\[\]]+)", 1),
+        ","
+    )
+
+    # Combine both lists; fallback to named columns if parentheses empty
+    cdf = check_df.withColumn(
+        "dq_columns",
+        F.when(col_list.getItem(0) != "", col_list)  # if parentheses have extraction
+         .otherwise(columns_from_named)
+    )
+
+    # Clean values: remove brackets, strip spaces, filter empty strings
+    cdf = cdf.withColumn(
+        "dq_columns",
+        F.expr("filter(transform(dq_columns, x -> regexp_replace(trim(x), '[\\[\\]]', '')), x -> x != '')")
+    )
+
+    # ------------------------------ NORMALIZE JOIN KEY -----------------------------------
+    cdf = cdf.withColumn(
+        "join_key",
+        F.regexp_replace(F.lower(F.col("constraint")), "[^a-z0-9_]", "")
+    )
+
+    mdf = metrics_df.withColumn(
+        "join_key",
+        F.regexp_replace(F.lower(F.col("name")), "[^a-z0-9_]", "")
+    )
+
+    # ------------------------------ JOIN RESULTS -----------------------------------------
+    return (
+        cdf.alias("c")
+        .join(mdf.alias("m"), "join_key", "left")
+        .select(
+            "c.check",
+            "c.check_level",
+            "c.check_status",
+            "c.constraint",
+            "c.constraint_status",
+            "c.constraint_message",
+
+            # multi-col support
+            "dq_columns",
+
+            "m.name",
+            "m.instance",
+            "m.value",
+            "join_key"
+        )
+    )
