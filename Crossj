@@ -1,0 +1,11 @@
+from pyspark.sql.functions import lower
+
+# Case-insensitive substring matching
+result = df1.crossJoin(df2) \
+    .filter(lower(col("full_name")).contains(lower(col("name")))) \
+    .select(
+        df1["*"],
+        df2["department"], 
+        df2["code"],
+        lit(True).alias("found_in_df2")
+    )
