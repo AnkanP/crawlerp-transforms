@@ -1,0 +1,77 @@
+from pyspark.sql import functions as F
+
+BRACKETS_PATTERN = "[\\(\\)\\[\\]\\{\\}]"
+ALNUM_UNDERSCORE = "[^a-z0-9_]"
+
+def join_deequ_results(check_df, metrics_df):
+    """
+    Clean DQ constraint strings and join Deequ check results with metrics.
+    """
+
+    print("OK1")
+    check_df.show(truncate=False)
+
+    # -------------------------
+    # EXTRACT MULTIPLE COLUMNS
+    # -------------------------
+    print("OK2")
+    check_df = check_df.withColumn(
+        "dq_columns",
+        F.regexp_extract(F.col("constraint"), r"\((.*?)\)", 1)
+    )
+    check_df.show(truncate=False)
+
+    # Convert single string "(a, b)" -> ["a", "b"]
+    print("OK3")
+    check_df = check_df.withColumn(
+        "dq_columns",
+        F.split(F.regexp_replace(F.col("dq_columns"), BRACKETS_PATTERN, ""), ",")
+    )
+    check_df.show(truncate=False)
+
+    # Trim and remove empty items
+    print("OK4")
+    check_df = check_df.withColumn(
+        "dq_columns",
+        F.expr(
+            f"""
+            filter(
+                transform(
+                    dq_columns,
+                    x -> trim(x)
+                ),
+                x -> x != ''
+            )
+        """
+        )
+    )
+    check_df.show(truncate=False)
+
+    # -------------------------
+    # NORMALIZE JOIN KEY
+    # -------------------------
+    print("OK5")
+    check_df = check_df.withColumn(
+        "join_key",
+        F.regexp_replace(F.lower(F.col("constraint")), ALNUM_UNDERSCORE, "")
+    )
+    check_df.show(truncate=False)
+
+    print("OK6")
+    metrics_df = metrics_df.withColumn(
+        "join_key",
+        F.regexp_replace(F.lower(F.col("name")), ALNUM_UNDERSCORE, "")
+    )
+    metrics_df.show(truncate=False)
+
+    # -------------------------
+    # JOIN RESULTS
+    # -------------------------
+    print("OK7")
+    final_df = (
+        check_df.alias("c")
+        .join(metrics_df.alias("m"), "join_key", "left")
+    )
+
+    final_df.show(truncate=False)
+    return final_df
