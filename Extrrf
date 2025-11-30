@@ -1,0 +1,55 @@
+import re
+
+# The input content
+content = """CompletenessConstraint(Completeness(callingsystem,None,None))
+UniqueValueRatioConstraint(UniqueValueRatio(Stream(caseid, ?),None,None))
+UniquenessConstraint(Uniqueness(List(caseid),None,None))
+UniquenessConstraint(Uniqueness(List(processid),None,None))
+SizeConstraint(Size(None))
+UniquenessConstraint(Uniqueness(Stream(caseid, ?),None,None))"""
+
+def extract_constraints_and_fields(text):
+    # Extract constraint names (text before first parenthesis)
+    constraint_pattern = r'^([A-Za-z]+)'
+    
+    # Extract field names within brackets (content inside List(), Stream(), or direct parameters)
+    field_pattern = r'(?:List|Stream)\(([^)]+)\)|(?:Completeness|UniqueValueRatio|Uniqueness|Size)\(([^,]+)'
+    
+    lines = text.strip().split('\n')
+    constraints = []
+    fields = []
+    
+    for line in lines:
+        # Extract constraint name
+        constraint_match = re.match(constraint_pattern, line)
+        if constraint_match:
+            constraints.append(constraint_match.group(1))
+        
+        # Extract field names
+        field_matches = re.findall(field_pattern, line)
+        for match in field_matches:
+            # match is a tuple, we need to get the non-empty element
+            field = match[0] or match[1] if len(match) > 1 else match[0]
+            if field and field != 'None':
+                # Split by comma and clean up the fields
+                field_parts = [f.strip() for f in field.split(',')]
+                for part in field_parts:
+                    if part and part != '?' and part != 'None':
+                        fields.append(part)
+    
+    return constraints, fields
+
+# Extract the data
+constraint_names, field_names = extract_constraints_and_fields(content)
+
+# Remove duplicates while preserving order
+constraint_names = list(dict.fromkeys(constraint_names))
+field_names = list(dict.fromkeys(field_names))
+
+print("Constraint Names:")
+for i, constraint in enumerate(constraint_names, 1):
+    print(f"{i}. {constraint}")
+
+print("\nField Names within Brackets:")
+for i, field in enumerate(field_names, 1):
+    print(f"{i}. {field}")
