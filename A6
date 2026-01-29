@@ -1,0 +1,6 @@
+runtime_params = {
+    "process_date": "2026-01-29",
+    "watermark": "2026-01-28 00:00:00"
+}
+
+final_df, metrics = run_pipeline("pipeline_config.yaml", runtime_params)
