@@ -1,0 +1,62 @@
+from datetime import datetime
+
+def materialize_cte(cte_name, cte, params):
+    df = read_s3_source(cte, params)
+    if df is None:
+        driving_table = cte.get("driving_table", cte.get("source"))
+        alias = cte.get("alias", "")
+        df = spark.sql(f"SELECT * FROM {driving_table} {alias}")
+
+    # Filters
+    if "filters" in cte:
+        for f in cte["filters"]:
+            df = df.filter(render_template(f, params))
+
+    # Select
+    if "select" in cte:
+        df = df.selectExpr(*cte["select"])
+
+    # Dedup
+    df, duplicate_count = apply_dedup(df, cte.get("dedup"))
+
+    # Transformations
+    df = apply_transformations(df, cte.get("transformations"))
+
+    input_count = df.count()
+
+    # Checkpoint / temp view
+    cp = cte.get("checkpoint")
+    checkpoint_path = None
+    if cp:
+        checkpoint_path = render_template(cp["path"], params)
+        df.write.mode(cp.get("mode", "overwrite")).format(cp.get("format", "parquet")).save(checkpoint_path)
+        spark.read.format(cp.get("format", "parquet")).load(checkpoint_path).createOrReplaceTempView(cp["register_as"])
+
+    output_count = df.count()
+
+    # DQ / Null checks for key columns
+    key_cols = [col.split()[0] for col in cte.get("select", []) if "id" in col.lower()]
+    null_counts = {col: df.filter(F.col(col).isNull()).count() for col in key_cols}
+
+    # Logging
+    logger.info(f"CTE Stage: {cte_name}")
+    logger.info(f"Runtime Params: {params}")
+    logger.info(f"Input Rows: {input_count + duplicate_count}")
+    logger.info(f"Duplicate Rows Removed: {duplicate_count}")
+    logger.info(f"Output Rows: {output_count}")
+    if checkpoint_path:
+        logger.info(f"Checkpoint written to: {checkpoint_path}")
+    logger.info(f"Null counts: {null_counts}")
+    logger.info("-" * 80)
+
+    # Return metrics including DQ info for audit
+    return {
+        "stage": cte_name,
+        "input_count": input_count,
+        "duplicate_count": duplicate_count,
+        "output_count": output_count,
+        "checkpoint_path": checkpoint_path,
+        "null_counts": null_counts,
+        "runtime_params": params,
+        "timestamp": datetime.now()
+    }
