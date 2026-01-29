@@ -1,0 +1,3 @@
+audit:
+  iceberg_table: dm_audit.pipeline_runs
+  partition_by: process_date
