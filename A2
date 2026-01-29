@@ -1,0 +1,21 @@
+def save_audit(metrics_list, audit_cfg, process_date):
+    audit_rows = []
+    for m in metrics_list:
+        for col, null_count in m["null_counts"].items():
+            audit_rows.append({
+                "process_date": process_date,
+                "stage": m["stage"],
+                "input_count": m["input_count"],
+                "duplicate_count": m["duplicate_count"],
+                "output_count": m["output_count"],
+                "checkpoint_path": m["checkpoint_path"] or "",
+                "key_column": col,
+                "null_count": null_count,
+                "runtime_params": str(m["runtime_params"]),
+                "run_timestamp": m["timestamp"]
+            })
+    if audit_rows:
+        audit_df = spark.createDataFrame(audit_rows)
+        table = audit_cfg["iceberg_table"]
+        audit_df.writeTo(table).appendPartitions()
+        logger.info(f"Audit metrics saved to {table}")
