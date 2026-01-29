@@ -1,0 +1,47 @@
+ctes:
+  raw_contracts:
+    s3_source:
+      path: "tests/sample_data/contracts_{process_date}.csv"
+      format: "csv"
+      options:
+        header: true
+    checkpoint:
+      path: "staging/raw_contracts"
+      format: "parquet"
+      register_as: "raw_contracts_view"
+    dedup:
+      method: row_number
+      partition_by: ["contract_id"]
+      order_by: ["last_updated_ts"]
+
+  customers_dim:
+    s3_source:
+      path: "tests/sample_data/customers_{process_date}.csv"
+      format: "csv"
+      options:
+        header: true
+    checkpoint:
+      path: "staging/customers_dim"
+      format: "parquet"
+      register_as: "customers_view"
+
+  country_dim:
+    s3_source:
+      path: "tests/sample_data/country_dim_{process_date}.csv"
+      format: "csv"
+      options:
+        header: true
+    checkpoint:
+      path: "staging/country_dim"
+      format: "parquet"
+      register_as: "country_view"
+
+final:
+  from: raw_contracts
+  select:
+    - "contract_id"
+    - "customer_id"
+    - "status"
+    - "last_updated_ts"
+    - "country_id"
+    - "amount"
