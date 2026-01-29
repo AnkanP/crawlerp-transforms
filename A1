@@ -1,0 +1,23 @@
+def run_pipeline(config_path, params):
+    config = load_config(config_path)
+    validate_params(config, params)
+
+    # Run all CTEs
+    metrics_dict = run_ctes(config["ctes"], params)
+    metrics_list = list(metrics_dict.values())
+
+    # Generate final WITH clause SQL
+    final_sql = generate_full_with_sql(config["ctes"], params, config["final"]["select"], config["final"]["from"])
+    final_df = spark.sql(final_sql)
+
+    # Reconciliation + DQ
+    reconcile(metrics_dict, final_df, config["final"])
+
+    # Write final to Iceberg
+    write_final_to_iceberg(final_df, config["final"])
+
+    # Save Audit
+    if "audit" in config:
+        save_audit(metrics_list, config["audit"], params["process_date"])
+
+    return final_df, metrics_dict
