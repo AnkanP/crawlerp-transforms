@@ -1,0 +1,265 @@
+import yaml
+import sys
+import logging
+from pyspark.sql import SparkSession, functions as F
+from pyspark.sql.window import Window
+
+# -----------------------------
+# Spark Session
+# -----------------------------
+spark = SparkSession.builder \
+    .appName("FullHybridPipeline") \
+    .config("spark.sql.catalog.spark_catalog", "org.apache.iceberg.spark.SparkSessionCatalog") \
+    .config("spark.sql.catalog.spark_catalog.type", "hive") \
+    .enableHiveSupport() \
+    .getOrCreate()
+
+# -----------------------------
+# Logging setup
+# -----------------------------
+logger = logging.getLogger("HybridPipeline")
+logger.setLevel(logging.INFO)
+handler = logging.StreamHandler(sys.stdout)
+formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+handler.setFormatter(formatter)
+logger.addHandler(handler)
+
+# -----------------------------
+# YAML Utilities
+# -----------------------------
+def load_config(path):
+    with open(path) as f:
+        return yaml.safe_load(f)
+
+def render_template(template: str, params: dict) -> str:
+    for k, v in params.items():
+        template = template.replace(f"{{{{ {k} }}}}", str(v))
+    return template
+
+def validate_params(config, params):
+    required = {k for k, v in config.get("parameters", {}).items() if v.get("required", False)}
+    missing = required - params.keys()
+    if missing:
+        raise ValueError(f"Missing required parameters: {missing}")
+
+# -----------------------------
+# S3 ingestion
+# -----------------------------
+def read_s3_source(cte, params):
+    s3_cfg = cte.get("s3_source")
+    if not s3_cfg:
+        return None
+    path = render_template(s3_cfg["path"], params)
+    fmt = s3_cfg.get("format", "parquet")
+    options = s3_cfg.get("options", {})
+    df = spark.read.format(fmt)
+    for k, v in options.items():
+        df = df.option(k, v)
+    return df.load(path)
+
+# -----------------------------
+# Dedup
+# -----------------------------
+def apply_dedup(df, dedup_cfg):
+    if not dedup_cfg:
+        return df, 0
+    method = dedup_cfg.get("method", "distinct")
+    dup_count = 0
+    if method == "distinct":
+        before = df.count()
+        df = df.distinct()
+        dup_count = before - df.count()
+        return df, dup_count
+    elif method == "row_number":
+        partition_cols = dedup_cfg["partition_by"]
+        order_cols = dedup_cfg.get("order_by", [])
+        w = Window.partitionBy(*partition_cols)
+        for oc in order_cols:
+            if " DESC" in oc.upper():
+                w = w.orderBy(F.col(oc.split()[0]).desc())
+            else:
+                w = w.orderBy(F.col(oc.split()[0]).asc())
+        df = df.withColumn("__row_number", F.row_number().over(w))
+        before = df.count()
+        df = df.filter(F.col("__row_number") == 1).drop("__row_number")
+        dup_count = before - df.count()
+        return df, dup_count
+    else:
+        raise ValueError(f"Unsupported dedup method: {method}")
+
+# -----------------------------
+# Transformations
+# -----------------------------
+def apply_transformations(df, transformations):
+    if not transformations:
+        return df
+    for t in transformations:
+        if "group_by" in t and "aggregates" in t:
+            group_cols = t["group_by"]
+            agg_exprs = [F.expr(a) for a in t["aggregates"]]
+            df = df.groupBy(*group_cols).agg(*agg_exprs)
+    return df
+
+# -----------------------------
+# Resolve CTE Order
+# -----------------------------
+def resolve_cte_order(ctes):
+    visited, order = set(), []
+    def visit(name):
+        if name in visited:
+            return
+        visited.add(name)
+        for dep in ctes.get(name, {}).get("depends_on", []):
+            visit(dep)
+        order.append(name)
+    for cte in ctes:
+        visit(cte)
+    return order
+
+# -----------------------------
+# Build CTE SQL (WITH clause)
+# -----------------------------
+def build_cte_sql(cte_name, cte, params):
+    select_sql = ",\n        ".join(cte["select"])
+    where_sql = ""
+    if "filters" in cte:
+        filters = [render_template(f, params) for f in cte["filters"]]
+        if filters:
+            where_sql = "WHERE " + " AND ".join(filters)
+    driving_table = cte.get("driving_table", cte.get("source"))
+    alias = cte.get("alias", "")
+    join_sql = ""
+    if "joins" in cte:
+        join_clauses = [
+            f"{j['type'].upper()} JOIN {j['table']} ON {render_template(j['condition'], params)}"
+            for j in cte["joins"]
+        ]
+        join_sql = "\n" + "\n".join(join_clauses)
+    return f"""
+{cte_name} AS (
+SELECT
+    {select_sql}
+FROM {driving_table} {alias}
+{where_sql}
+{join_sql}
+)
+""".strip()
+
+# -----------------------------
+# Materialize CTE (full functionality)
+# -----------------------------
+def materialize_cte(cte_name, cte, params):
+    df = read_s3_source(cte, params)
+    if df is None:
+        driving_table = cte.get("driving_table", cte.get("source"))
+        alias = cte.get("alias", "")
+        df = spark.sql(f"SELECT * FROM {driving_table} {alias}")
+
+    # Filters
+    if "filters" in cte:
+        for f in cte["filters"]:
+            df = df.filter(render_template(f, params))
+
+    # Select
+    if "select" in cte:
+        df = df.selectExpr(*cte["select"])
+
+    # Dedup
+    df, duplicate_count = apply_dedup(df, cte.get("dedup"))
+
+    # Transform
+    df = apply_transformations(df, cte.get("transformations"))
+
+    input_count = df.count()
+
+    # Checkpoint / temp view
+    cp = cte.get("checkpoint")
+    checkpoint_path = None
+    if cp:
+        checkpoint_path = render_template(cp["path"], params)
+        df.write.mode(cp.get("mode", "overwrite")).format(cp.get("format", "parquet")).save(checkpoint_path)
+        spark.read.format(cp.get("format", "parquet")).load(checkpoint_path).createOrReplaceTempView(cp["register_as"])
+
+    output_count = df.count()
+
+    # -----------------
+    # Logging after stage
+    # -----------------
+    logger.info(f"CTE Stage: {cte_name}")
+    logger.info(f"Runtime Params: {params}")
+    logger.info(f"Input Rows: {input_count + duplicate_count}")
+    logger.info(f"Duplicate Rows Removed: {duplicate_count}")
+    logger.info(f"Output Rows: {output_count}")
+    if checkpoint_path:
+        logger.info(f"Checkpoint written to: {checkpoint_path}")
+    logger.info("-" * 80)
+
+    return {"input_count": input_count, "duplicate_count": duplicate_count, "output_count": output_count}
+
+# -----------------------------
+# Run all CTEs
+# -----------------------------
+def run_ctes(ctes, params):
+    metrics = {}
+    order = resolve_cte_order(ctes)
+    for name in order:
+        metrics[name] = materialize_cte(name, ctes[name], params)
+    return metrics
+
+# -----------------------------
+# Full WITH clause SQL
+# -----------------------------
+def generate_full_with_sql(ctes, params, final_select, final_from):
+    cte_order = resolve_cte_order(ctes)
+    cte_sql_list = [build_cte_sql(name, ctes[name], params) for name in cte_order]
+    ctes_sql = ",\n".join(cte_sql_list)
+    select_sql = ",\n    ".join(final_select)
+    return f"""
+WITH
+{ctes_sql}
+SELECT
+    {select_sql}
+FROM {final_from}
+""".strip()
+
+# -----------------------------
+# Iceberg write
+# -----------------------------
+def write_final_to_iceberg(df, final_cfg):
+    iceberg_cfg = final_cfg.get("iceberg")
+    if iceberg_cfg:
+        table = iceberg_cfg["table"]
+        mode = iceberg_cfg.get("mode", "overwrite")
+        if mode == "overwrite":
+            df.writeTo(table).overwritePartitions()
+        else:
+            df.writeTo(table).appendPartitions()
+
+# -----------------------------
+# Reconciliation + DQ
+# -----------------------------
+def reconcile(metrics, final_df, final_cfg):
+    logger.info("==== Stage Metrics Summary ====")
+    for cte, m in metrics.items():
+        logger.info(f"{cte}: input={m['input_count']}, duplicates={m['duplicate_count']}, output={m['output_count']}")
+    final_count = final_df.count()
+    logger.info(f"Final target row count: {final_count}")
+    key_cols = [col.split()[0] for col in final_cfg.get("select", []) if "id" in col.lower()]
+    for col in key_cols:
+        nulls = final_df.filter(F.col(col).isNull()).count()
+        if nulls > 0:
+            logger.warning(f"Nulls detected in {col}: {nulls}")
+    logger.info("✅ Reconciliation complete.")
+
+# -----------------------------
+# Orchestrator
+# -----------------------------
+def run_pipeline(config_path, params):
+    config = load_config(config_path)
+    validate_params(config, params)
+    metrics = run_ctes(config["ctes"], params)
+    final_sql = generate_full_with_sql(config["ctes"], params, config["final"]["select"], config["final"]["from"])
+    final_df = spark.sql(final_sql)
+    reconcile(metrics, final_df, config["final"])
+    write_final_to_iceberg(final_df, config["final"])
+    return final_df, metrics
