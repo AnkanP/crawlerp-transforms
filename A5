@@ -1,0 +1,115 @@
+parameters:
+  process_date:
+    type: DATE
+    required: true
+  watermark:
+    type: TIMESTAMP
+    required: true
+
+ctes:
+
+  # Layer 1: Raw ingestion from S3
+  raw_contracts:
+    s3_source:
+      path: "s3://raw-data/contracts/{{ process_date }}/"
+      format: csv
+      options:
+        header: true
+        inferSchema: true
+    alias: c
+    select:
+      - contract_id
+      - customer_id
+      - status
+      - last_updated_ts
+      - country_id
+    filters:
+      - "last_updated_ts >= '{{ watermark }}'"
+    dedup:
+      method: row_number
+      partition_by: [contract_id]
+      order_by: [last_updated_ts DESC]
+    checkpoint:
+      path: "s3://staging/contracts_delta"
+      format: parquet
+      mode: overwrite
+      register_as: contracts_delta_stg
+
+  # Layer 2: Dimension - combined tables
+  geo_dim:
+    driving_table: country_dim c
+    joins:
+      - type: left
+        table: region_dim r
+        condition: "c.region_id = r.region_id"
+      - type: left
+        table: city_dim ci
+        condition: "r.city_id = ci.city_id"
+    select:
+      - c.country_id
+      - r.region_name
+      - ci.city_name
+    dedup:
+      method: row_number
+      partition_by: [c.country_id]
+      order_by: [r.updated_ts DESC]
+    checkpoint:
+      path: "s3://staging/geo_dim"
+      format: parquet
+      mode: overwrite
+      register_as: geo_dim_stg
+
+  # Layer 3: Customer dimension
+  customers_dim:
+    source: dm.customers
+    alias: cust
+    select:
+      - customer_id
+      - CONCAT(first_name, ' ', last_name) AS customer_name
+    checkpoint:
+      path: "s3://staging/customers_dim"
+      format: parquet
+      mode: overwrite
+      register_as: customers_dim_stg
+
+  # Layer 4: Enrichment
+  contracts_enriched:
+    depends_on: [raw_contracts, geo_dim, customers_dim]
+    driving_table: contracts_delta_stg c
+    joins:
+      - type: left
+        table: geo_dim_stg g
+        condition: "c.country_id = g.country_id"
+      - type: left
+        table: customers_dim_stg cust
+        condition: "c.customer_id = cust.customer_id"
+    select:
+      - c.contract_id
+      - c.customer_id
+      - cust.customer_name
+      - g.region_name
+      - g.city_name
+    transformations:
+      - group_by: [customer_id]
+        aggregates:
+          - COUNT(contract_id) AS total_contracts
+    dedup:
+      method: distinct
+    checkpoint:
+      path: "s3://staging/contracts_enriched"
+      format: parquet
+      mode: overwrite
+      register_as: contracts_enriched_stg
+
+final:
+  from: contracts_enriched_stg
+  select:
+    - contract_id
+    - customer_id
+    - customer_name
+    - region_name
+    - city_name
+    - total_contracts
+  iceberg:
+    table: dm_final.contracts_enriched
+    mode: overwrite
