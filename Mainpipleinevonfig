@@ -1,0 +1,156 @@
+pipeline:
+  name: contracts_enrichment_pipeline
+  environment: dev
+
+runtime_parameters:
+  process_date: "${PROCESS_DATE}"     # passed at runtime
+  snapshot_date: "${SNAPSHOT_DATE}"
+  region: "EU"
+
+spark:
+  shuffle_partitions: 200
+  adaptive_execution: true
+  checkpoint_dir: "s3://my-bucket/checkpoints/contracts_pipeline"
+
+# ---------------------------
+# SOURCE DEFINITIONS
+# ---------------------------
+sources:
+  contracts:
+    type: s3
+    format: parquet
+    path: "s3://raw-zone/contracts/"
+    view_name: contracts_raw
+
+  customers:
+    type: s3
+    format: csv
+    path: "s3://raw-zone/customers/"
+    options:
+      header: true
+    view_name: customers_raw
+
+  payments:
+    type: iceberg
+    database: finance
+    table: payments
+    view_name: payments_raw
+
+# ---------------------------
+# DRIVING TABLE
+# ---------------------------
+driving_table:
+  name: contracts_raw
+  alias: c
+
+# ---------------------------
+# CTE DEFINITIONS
+# ---------------------------
+ctes:
+
+  - name: contracts_filtered
+    type: single
+    source: contracts_raw
+    sql: |
+      SELECT *
+      FROM contracts_raw
+      WHERE process_date = '{{ process_date }}'
+
+    stage_output:
+      enabled: true
+      path: "s3://stage-zone/contracts_filtered/"
+
+  - name: customers_dedup
+    type: dedup
+    source: customers_raw
+
+    dedup:
+      method: row_number
+      partition_by: ["customer_id"]
+      order_by:
+        - column: updated_ts
+          order: desc
+
+    stage_output:
+      enabled: true
+      path: "s3://stage-zone/customers_dedup/"
+
+  - name: payments_agg
+    type: aggregation
+    source: payments_raw
+
+    sql: |
+      SELECT
+        contract_id,
+        SUM(amount) AS total_payment,
+        COUNT(*) AS payment_count
+      FROM payments_raw
+      WHERE payment_date <= '{{ snapshot_date }}'
+      GROUP BY contract_id
+
+    stage_output:
+      enabled: true
+      path: "s3://stage-zone/payments_agg/"
+
+  # ---------------------------
+  # COMBINED JOIN CTE
+  # ---------------------------
+  - name: contracts_enriched
+    type: join
+    driving_table: contracts_filtered
+
+    joins:
+      - table: customers_dedup
+        alias: cust
+        join_type: left
+        condition: "c.customer_id = cust.customer_id"
+
+      - table: payments_agg
+        alias: pay
+        join_type: left
+        condition: "c.contract_id = pay.contract_id"
+
+    select:
+      - "c.contract_id"
+      - "c.customer_id"
+      - "cust.customer_name"
+      - "CAST(c.start_date AS DATE) AS start_date"
+      - "COALESCE(pay.total_payment, 0) AS total_payment"
+      - "CONCAT(c.region, '-', '{{ region }}') AS region_code"
+
+    stage_output:
+      enabled: true
+      path: "s3://stage-zone/contracts_enriched/"
+
+# ---------------------------
+# FINAL DEDUP + TARGET WRITE
+# ---------------------------
+final_output:
+
+  dedup:
+    method: distinct
+    duplicate_count_metric: true
+
+  reconciliation:
+    enabled: true
+    compare_with_driving_table: true
+
+  target:
+    type: iceberg
+    database: finance
+    table: contracts_enriched
+    mode: overwrite
+    partition_by:
+      - process_date
+
+# ---------------------------
+# METRICS & LOGGING
+# ---------------------------
+metrics:
+  enabled: true
+  output_path: "s3://metrics-zone/contracts_pipeline/"
+
+logging:
+  level: INFO
+  log_row_counts: true
+  log_duplicate_counts: true
