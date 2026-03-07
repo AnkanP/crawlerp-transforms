@@ -1,0 +1,65 @@
+with params as (
+    select
+        '${run_date}' as processed_date_str,
+        cast(year(to_date('${run_date}', 'yyyy-MM-dd')) as string)  as yyyy,
+        cast(month(to_date('${run_date}', 'yyyy-MM-dd')) as string) as mm,
+        cast(day(to_date('${run_date}', 'yyyy-MM-dd')) as string)   as dd
+),
+
+cte1 as (
+    select
+        t1.contract_id,
+        t1.year,
+        t1.month,
+        t1.day,
+        t1.col_a,
+        t1.col_b,
+        concat(
+            t1.year, '-',
+            lpad(t1.month, 2, '0'), '-',
+            lpad(t1.day, 2, '0')
+        ) as processed_date
+    from table1 t1
+    cross join params p
+    where t1.year = p.yyyy
+      and t1.month = p.mm
+      and t1.day = p.dd
+),
+
+cte2_dedup as (
+    select
+        x.contract_id,
+        x.processed_date,
+        x.attr_1,
+        x.attr_2,
+        x.update_ts
+    from (
+        select
+            t2.contract_id,
+            t2.processed_date,
+            t2.attr_1,
+            t2.attr_2,
+            t2.update_ts,
+            row_number() over (
+                partition by t2.contract_id, t2.processed_date
+                order by t2.update_ts desc
+            ) as rn
+        from table2 t2
+        cross join params p
+        where t2.processed_date = p.processed_date_str
+    ) x
+    where x.rn = 1
+)
+
+select
+    a.contract_id,
+    a.processed_date,
+    a.col_a,
+    a.col_b,
+    b.attr_1,
+    b.attr_2,
+    b.update_ts
+from cte1 a
+left join cte2_dedup b
+  on a.contract_id = b.contract_id
+ and a.processed_date = b.processed_date
