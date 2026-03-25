@@ -1,0 +1,44 @@
+-- =============================================================
+-- Spark SQL Batch Migration Script for Iceberg Table
+-- =============================================================
+-- Parameters to update:
+--   1. Table name
+--   2. JSON columns and their corresponding MAP columns
+--   3. Batch date range for dateprocessed
+-- =============================================================
+
+-- Step 0: Use catalog
+USE my_catalog.db_name;
+
+-- Step 1: Update partition spec to only 'dateprocessed'
+ALTER TABLE your_table
+REPLACE PARTITION SPEC (dateprocessed);
+
+-- =============================================================
+-- Step 2: Batch update JSON → MAP and timestamp
+-- =============================================================
+-- Example batch for dateprocessed between '2026-03-20' and '2026-03-24'
+UPDATE your_table
+SET
+    attributes1 = TRY(CAST(json_parse(json_col1) AS MAP<VARCHAR,VARCHAR>)),
+    attributes2 = TRY(CAST(json_parse(json_col2) AS MAP<VARCHAR,VARCHAR>)),
+    application_datetime = TRY(CAST(application_datetime AS TIMESTAMP))
+WHERE dateprocessed BETWEEN '2026-03-20' AND '2026-03-24';
+
+-- Repeat the above UPDATE for each batch of dateprocessed partitions as needed
+
+-- =============================================================
+-- Step 3: Inspect updated files in the latest snapshot
+-- =============================================================
+WITH latest_snapshot AS (
+    SELECT MAX(snapshot_id) AS snapshot_id
+    FROM iceberg.system.snapshots('your_table')
+)
+SELECT file_path, partition, file_size
+FROM iceberg.system.files('your_table')
+WHERE snapshot_id = (SELECT snapshot_id FROM latest_snapshot);
+
+-- =============================================================
+-- Step 4: Optional cleanup after all batches
+-- =============================================================
+ALTER TABLE your_table EXECUTE EXPIRE SNAPSHOTS;
