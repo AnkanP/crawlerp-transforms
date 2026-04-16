@@ -1,0 +1,24 @@
+: Advantages of Feature Engineering & Feature Registry
+Feature Engineering
+Improves predictive power by converting raw data into model-ready signals
+Reduces noise and highlights meaningful behavioural patterns
+Enables point-in-time correct features, helping prevent data leakage
+Creates reusable features across PD, application, and behavioural models
+Standardises logic for rolling windows, ratios, trends, and aggregations
+Improves explainability because business logic is clearer than raw inputs
+Supports consistency between training, backtesting, and production scoring
+Helps align model inputs with business definitions and risk policy
+Feature Registry
+Provides a central catalogue of available features
+Documents feature meaning, owner, lineage, and calculation logic
+Improves discoverability so teams do not rebuild the same features
+Supports versioning for auditability and reproducibility
+Clarifies approved versus deprecated features
+Strengthens governance through ownership and control
+Makes model review and validation easier for risk and compliance teams
+Speeds up onboarding for ML engineers, analysts, and validators
+Business value
+Faster model development
+Better governance and control
+Higher consistency across teams
+Easier regulatory and audit review
