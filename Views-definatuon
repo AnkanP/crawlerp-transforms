@@ -1,0 +1,100 @@
+Problem Statement: Inconsistent View Definitions Across Athena and Spark
+
+Background
+
+In a modern AWS lakehouse architecture, data is commonly consumed by multiple analytics engines such as Amazon Athena and Apache Spark (AWS Glue). Business users, analysts, and data scientists often require a consistent logical layer that abstracts complex business logic from underlying physical tables.
+
+Traditionally, views are created independently within each query engine:
+
+- Athena Views are created and managed within Athena.
+- Spark Views are created and managed within Spark SQL.
+
+While both provide logical abstraction, they introduce challenges in a multi-engine environment.
+
+Challenges with Athena Views
+
+Athena views are designed specifically for the Athena query engine.
+
+Limitations
+
+- View definitions are stored in a format optimized for Athena.
+- Spark cannot reliably interpret or execute Athena view definitions.
+- Data engineering teams must recreate the same business logic in Spark when performing ETL or machine learning workloads.
+- Changes to business logic require updates in multiple places, increasing maintenance effort and risk of inconsistency.
+
+Impact
+
+- Duplicate implementations of business rules.
+- Increased operational overhead.
+- Risk of different results between Athena and Spark consumers.
+- Reduced governance and lineage visibility.
+
+Challenges with Spark Views
+
+Spark views are designed for Spark execution environments.
+
+Limitations
+
+- Temporary views are session-scoped and invisible outside Spark.
+- Permanent Spark views may not be consumable by Athena.
+- Athena cannot reliably execute Spark-specific SQL constructs.
+- Cross-account and Lake Formation governed environments may not recognize Spark-generated view metadata consistently.
+
+Impact
+
+- Lack of interoperability between analytics engines.
+- Additional development effort to expose Spark transformations to Athena users.
+- Difficulty enforcing a single governed semantic layer.
+
+Business Problem
+
+Organizations require a single logical data definition that can be consumed consistently across multiple analytics engines while maintaining centralized governance, security, and access control.
+
+Without a common view abstraction:
+
+- Business logic becomes fragmented.
+- Data quality issues arise due to inconsistent implementations.
+- Governance teams lose visibility into how data is consumed.
+- Cross-account data sharing becomes more complex.
+- Maintenance costs increase as the number of consuming platforms grows.
+
+Solution: AWS Glue Data Catalog Views
+
+AWS Glue Data Catalog Views (Multi-Dialect Views) provide a centralized, governed view layer within the Glue Data Catalog.
+
+Instead of storing a single engine-specific definition, a Data Catalog View stores dialect-specific representations for supported engines such as Athena, Spark, and Redshift while maintaining a single logical view object.
+
+Benefits
+
+Centralized Governance
+
+- View definitions are registered in the AWS Glue Data Catalog.
+- Lake Formation permissions can be applied consistently.
+- Security and access policies are managed centrally.
+
+Multi-Engine Access
+
+- A single logical view can be exposed to multiple analytics engines.
+- Engine-specific dialects are maintained under one governed object.
+- Consumers do not need to know underlying table structures.
+
+Reduced Duplication
+
+- Business logic is defined once.
+- Eliminates the need to maintain separate Athena and Spark views.
+- Reduces development and maintenance effort.
+
+Improved Consistency
+
+- All consuming platforms use the same governed definition.
+- Reduces risk of inconsistent calculations and reporting.
+
+Enhanced Data Governance
+
+- Simplifies auditing and lineage tracking.
+- Provides a consistent semantic layer across accounts and workloads.
+- Aligns with centralized data governance operating models.
+
+Expected Outcome
+
+By adopting AWS Glue Data Catalog Views, organizations can establish a governed semantic layer that bridges Athena, Spark, and other analytics engines, reducing duplication of business logic, improving consistency of analytical results, and strengthening enterprise-wide data governance.
