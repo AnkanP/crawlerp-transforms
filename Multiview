@@ -1,0 +1,43 @@
+import boto3
+
+glue = boto3.client("glue")
+
+DATABASE = "your_db"
+VIEW_NAME = "your_view"
+
+athena_sql = """
+SELECT id, amount
+FROM source_table
+"""
+
+spark_sql = """
+SELECT id, amount
+FROM glue_catalog.your_db.source_table
+"""
+
+table_input = {
+    "Name": VIEW_NAME,
+    "TableType": "VIRTUAL_VIEW",
+    "ViewDefinition": {
+        "Representations": [
+            {
+                "Dialect": "ATHENA",
+                "ViewOriginalText": athena_sql,
+                "ViewExpandedText": athena_sql
+            },
+            {
+                "Dialect": "SPARK",
+                "ViewOriginalText": spark_sql,
+                "ViewExpandedText": spark_sql
+            }
+        ]
+    },
+    "Parameters": {}
+}
+
+glue.create_table(
+    DatabaseName=DATABASE,
+    TableInput=table_input
+)
+
+print("Multi-dialect view created")
