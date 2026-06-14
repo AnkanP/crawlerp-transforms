@@ -1,0 +1,65 @@
+import boto3
+import base64
+
+glue = boto3.client("glue")
+
+DATABASE = "your_database"
+TABLE = "your_view_name"
+
+# 1. Fetch existing metadata
+response = glue.get_table(
+    DatabaseName=DATABASE,
+    Name=TABLE
+)
+
+table = response["Table"]
+
+# 2. Extract existing view fields
+view_original = table.get("ViewOriginalText")
+view_expanded = table.get("ViewExpandedText")
+
+print("Original View:")
+print(view_original)
+
+print("\nExisting Expanded View:")
+print(view_expanded)
+
+# 3. Modify expanded text (your transformation logic)
+# Example: enforce fully qualified names or rewrite SQL
+new_expanded = view_expanded
+
+if new_expanded:
+    new_expanded = new_expanded.replace(
+        "old_db.",
+        "new_db."
+    )
+
+# Or completely override:
+# new_expanded = "SELECT * FROM new_db.my_table"
+
+# 4. Build TableInput for update_table
+table_input = {
+    "Name": table["Name"],
+    "TableType": table.get("TableType", "VIRTUAL_VIEW"),
+    "Parameters": table.get("Parameters", {}),
+}
+
+# Preserve storage descriptor if present
+if "StorageDescriptor" in table:
+    table_input["StorageDescriptor"] = table["StorageDescriptor"]
+
+# Preserve partition keys if present
+if "PartitionKeys" in table:
+    table_input["PartitionKeys"] = table["PartitionKeys"]
+
+# 🔥 KEY PART: update view fields
+table_input["ViewOriginalText"] = view_original
+table_input["ViewExpandedText"] = new_expanded
+
+# 5. Push update back to Glue
+update_response = glue.update_table(
+    DatabaseName=DATABASE,
+    TableInput=table_input
+)
+
+print("\nUpdated Glue View successfully")
